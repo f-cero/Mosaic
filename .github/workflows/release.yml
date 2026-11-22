@@ -50,14 +50,22 @@ jobs:
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true
+          update: false
           pacman: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-make
             mingw-w64-x86_64-SDL2
-      - run: cmake -S . -B build-win -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release -DSDL2_DIR=/mingw64/lib/cmake/SDL2
-      - run: cmake --build build-win -j
+            make
+      - name: configure
+        run: |
+          set -e
+          cmake -S . -B build-win -G "MinGW Makefiles" -DCMAKE_MAKE_PROGRAM=mingw32-make \
+                -DCMAKE_BUILD_TYPE=Release -DSDL2_ROOT=/mingw64 \
+            || cmake -S . -B build-win -G "MSYS Makefiles" \
+                -DCMAKE_BUILD_TYPE=Release -DSDL2_ROOT=/mingw64
+      - name: build
+        run: cmake --build build-win -j 4
       - name: test
         run: |
           ./build-win/mosaic_tests.exe

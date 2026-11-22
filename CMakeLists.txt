@@ -34,11 +34,27 @@ target_link_libraries(mosaic_conformance PRIVATE mosaic_core)
 add_test(NAME mosaic_conformance COMMAND mosaic_conformance)
 
 # Studio (SDL2 GUI) — see studio/README.md
-find_package(SDL2 QUIET)
-if(SDL2_FOUND)
+# SDL2 can come from a config package (Linux/SDL2_DIR) or from an explicit
+# tree (-DSDL2_ROOT=/mingw64 on MSYS2/Windows), which avoids depending on a
+# CMake config package that mingw packaging does not always ship.
+set(MOSAIC_HAVE_SDL2 FALSE)
+if(SDL2_ROOT)
+  set(SDL2_INCLUDE_DIRS "${SDL2_ROOT}/include/SDL2")
+  set(SDL2_LIBRARIES "-L${SDL2_ROOT}/lib;-lmingw32;-lSDL2main;-lSDL2")
+  set(MOSAIC_HAVE_SDL2 TRUE)
+  message(STATUS "Studio: SDL2 from SDL2_ROOT=${SDL2_ROOT}")
+else()
+  find_package(SDL2 QUIET)
+  if(SDL2_FOUND)
+    set(MOSAIC_HAVE_SDL2 TRUE)
+    message(STATUS "Studio: SDL2 from package config")
+  endif()
+endif()
+
+if(MOSAIC_HAVE_SDL2)
   add_executable(mosaic-studio studio/main.c)
   target_include_directories(mosaic-studio PRIVATE ${SDL2_INCLUDE_DIRS} studio third_party/font)
   target_link_libraries(mosaic-studio PRIVATE mosaic_core ${SDL2_LIBRARIES})
 else()
-  message(STATUS "SDL2 not found — building CLI only (install libsdl2-dev)")
+  message(STATUS "SDL2 not found — building CLI only (install libsdl2-dev / pass -DSDL2_ROOT=)")
 endif()
