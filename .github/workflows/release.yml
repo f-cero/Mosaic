@@ -50,22 +50,26 @@ jobs:
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: false
-          pacman: >-
+          # NOTE: the input is `install:` -- an earlier revision used `pacman:`,
+          # which the action silently ignores, leaving cmake absent from PATH.
+          install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-make
+            mingw-w64-x86_64-ninja
             mingw-w64-x86_64-SDL2
-            make
-      - name: configure
+      - name: toolchain
         run: |
-          set -e
-          cmake -S . -B build-win -G "MinGW Makefiles" -DCMAKE_MAKE_PROGRAM=mingw32-make \
-                -DCMAKE_BUILD_TYPE=Release -DSDL2_ROOT=/mingw64 \
-            || cmake -S . -B build-win -G "MSYS Makefiles" \
-                -DCMAKE_BUILD_TYPE=Release -DSDL2_ROOT=/mingw64
+          cmake --version | head -1
+          gcc --version | head -1
+          ls /mingw64/include/SDL2/SDL.h /mingw64/lib/libSDL2.dll.a
+      - name: configure
+        run: >-
+          cmake -S . -B build-win -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=gcc
+          -DSDL2_ROOT=/mingw64
       - name: build
-        run: cmake --build build-win -j 4
+        run: cmake --build build-win
       - name: test
         run: |
           ./build-win/mosaic_tests.exe
