@@ -31,9 +31,22 @@ int ms_check_tiles(size_t bytes, unsigned bpp, unsigned tiles)
     return bytes == (size_t)tiles * per;
 }
 
-/* cart16 v2 inner header: u16 entry_count (power of two) | u16 entries.
- * Dimensions are not stored; the manifest may carry bg_map_w/bg_map_h,
- * otherwise ms_map_dims() derives a landscape power-of-two split. */
+/* bg_map payload.
+ *   v2.0  u16 entry_count (power of two) | u16 entries[count]
+ *   v2.1  u16 entry_count | u16 w | u16 h | u16 entries[count]
+ * The two forms are told apart by exact length (2+n*2 vs 6+n*2), so a v2.0
+ * reader and a v2.1 reader both accept a valid payload and the count can
+ * never be confused with the width. Dimensions are in tiles and describe
+ * the *visible* map; the entry count is the padded power-of-two stride area,
+ * i.e. count == next_pow2(w) * next_pow2(h). Without them a non-pow2 level
+ * can only be guessed, which wrapped 40x30 maps at 64x32. */
+static unsigned next_pow2u(unsigned v)
+{
+    unsigned s = 1;
+    while (s < v) s <<= 1;
+    return s;
+}
+
 int ms_check_map(const void *data, size_t bytes)
 {
     const uint8_t *p = (const uint8_t *)data;
@@ -41,17 +54,31 @@ int ms_check_map(const void *data, size_t bytes)
     const unsigned n = ms_rd16(p);
     if (n == 0 || n > 32768u) return 0;
     if (n & (n - 1)) return 0;                       /* power of two */
-    return bytes == 2u + (size_t)n * 2u;
+    if (bytes == 2u + (size_t)n * 2u) return 1;
+    if (bytes == 6u + (size_t)n * 2u) {
+        const unsigned w = ms_rd16(p + 2), h = ms_rd16(p + 4);
+        if (w == 0 || h == 0 || w > 128u || h > 128u) return 0;
+        if (next_pow2u(w) * next_pow2u(h) != n) return 0;
+        return 1;
+    }
+    return 0;
 }
 
-/* cart16 v2 inner header: u16 entry_count | u16 RGB565 entries.
- * Bank assignment is by asset name / manifest, not in the payload. */
+/* palette payload.
+ *   v2.0  u16 entry_count | u16 RGB565 entries[count]
+ *   v2.1  u16 entry_count | u8 bank | u8 reserved(0) | u16 entries[count]
+ * v2.0 leaves the bank to the manifest (palette_bg / palette_spr asset
+ * names) and failing that to asset order, which cannot survive a strict
+ * reference build that carries no manifest at all. v2.1 states it. */
 int ms_check_palette(const void *data, size_t bytes)
 {
     const uint8_t *p = (const uint8_t *)data;
     if (!p || bytes < 2) return 0;
     const unsigned n = ms_rd16(p);
-    return n >= 1 && n <= MS_PAL_ENTRIES && bytes == 2u + (size_t)n * 2u;
+    if (n < 1 || n > MS_PAL_ENTRIES) return 0;
+    if (bytes == 2u + (size_t)n * 2u) return 1;
+    if (bytes == 4u + (size_t)n * 2u) return p[2] <= 1u && p[3] == 0u;
+    return 0;
 }
 
 int ms_check_bank(size_t bytes) { return bytes >= 16 && bytes <= MS_BANK_BYTES_MAX; }

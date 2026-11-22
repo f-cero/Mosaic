@@ -437,8 +437,28 @@ int main(int argc, char **argv)
                             int val=atoi(eq+1)+delta;
                             char nv[64]; snprintf(nv,sizeof(nv),"%s=%d",key,val);
                             snprintf(g_nodes[g_sel].kv[k],64,"%s",nv);
-                            snprintf(g_lines[0],CW,"%s",g_lines[0]); /* keep line buffer */
-                            setlog("property changed — Save to persist",1);
+                            /* write through to the project line, then persist */
+                            char want[32]; snprintf(want,sizeof(want),"node %d ",g_nodes[g_sel].id);
+                            for(int i=0;i<g_nlines;i++) if(!strncmp(g_lines[i],want,strlen(want))){
+                                size_t kl=strlen(key); char *t=g_lines[i];
+                                int done=0;
+                                while((t=strstr(t,key))!=NULL){
+                                    if((t==g_lines[i]||t[-1]==' ')&&t[kl]=='='){
+                                        char *sp=strchr(t+kl,' ');
+                                        if(sp) snprintf(t,(size_t)(g_lines[i]+CW-t),"%s=%d%s",key,val,sp);
+                                        else   snprintf(t,(size_t)(g_lines[i]+CW-t),"%s=%d",key,val);
+                                        done=1; break;
+                                    }
+                                    t+=kl;
+                                }
+                                if(!done){ /* key not on the line yet: append it */
+                                    size_t l=strlen(g_lines[i]);
+                                    snprintf(g_lines[i]+l,(size_t)(g_lines[i]+CW-g_lines[i]-l)," %s=%d",key,val);
+                                }
+                                break;
+                            }
+                            project_save();
+                            setlog("property changed",1);
                         }
                     }
                 } else if(g_tab==0){

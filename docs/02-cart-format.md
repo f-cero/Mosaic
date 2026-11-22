@@ -59,3 +59,40 @@ the flag, payload CRC mismatch, any payload failing its kind validator,
 payloads out of order, and any cart above the byte budget passed to
 `ms_cart_mount_budget`. The writer re-mounts its own output before
 returning, so an unmountable cart is never produced.
+
+---
+
+## spec-rev 2.1 — payload headers carry what the manifest used to
+
+Two payloads relied on manifest hints to be usable. A strict reference build
+(`mosaic build --canonical`) carries no manifest at all, so those hints were
+unavailable exactly where they mattered. Both payloads gained an optional
+header; the **payload length selects the form**, so v2.0 carts keep mounting
+byte-for-byte and the two can never be confused.
+
+### `bg_map`
+
+| form | layout |
+|---|---|
+| v2.0 | `u16 entry_count` \| `u16 entries[entry_count]` |
+| v2.1 | `u16 entry_count` \| `u16 w` \| `u16 h` \| `u16 entries[entry_count]` |
+
+`w`/`h` are the **visible** map size in tiles; `entry_count` is still the
+padded power-of-two stride area, so a valid payload satisfies
+`entry_count == next_pow2(w) * next_pow2(h)` and the validator rejects any
+other combination. Without the dims a 40x30 level (5x4 tiles) can only be
+guessed as a power-of-two split and wraps at 8x4 tiles — a visible seam.
+
+### `palette`
+
+| form | layout |
+|---|---|
+| v2.0 | `u16 entry_count` \| `u16 rgb565[entry_count]` |
+| v2.1 | `u16 entry_count` \| `u8 bank` \| `u8 0` \| `u16 rgb565[entry_count]` |
+
+`bank` is 0 (background) or 1 (sprite); any other value fails the validator.
+A v2.0 palette is still banked by the manifest (`palette_bg` / `palette_spr`
+asset names) and, failing that, by asset order.
+
+Readers accept both forms; writers emit v2.1. `manifest` `bg_map_w` /
+`bg_map_h` remain parsed for v2.0 carts and are no longer written.

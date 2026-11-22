@@ -105,16 +105,25 @@ void ms_game_sfx(ms_game_t *g, int program, int note)
     if (g && g->synth) ms_synth_sfx(g->synth, program, note, 220);
 }
 
-/* cart16 v2 palettes carry no bank field: the bank comes from the
- * manifest (palette_bg / palette_spr asset names) or, failing that, from
- * asset order (first -> background, second -> sprite). */
+/* Palette bank: v2.1 payloads state it in a bank byte; v2.0 payloads fall
+ * back to the manifest (palette_bg / palette_spr asset names) and, failing
+ * that, to asset order (first -> background, second -> sprite). The entry
+ * base is derived from the payload length, so both forms load here. */
+static int palette_payload_bank(const ms_asset_t *a)
+{
+    const uint8_t *p = (const uint8_t *)a->data;
+    const unsigned n = ms_rd16(p);
+    return (a->size == 4u + (size_t)n * 2u) ? (int)(p[2] & 1u) : -1;
+}
+
 static void apply_palette(ms_ppu_t *ppu, const ms_asset_t *a, int bank)
 {
     const uint8_t *p = (const uint8_t *)a->data;
     const unsigned n = ms_rd16(p);
     if (n > MS_PAL_ENTRIES) return;
+    const size_t base = (a->size == 4u + (size_t)n * 2u) ? 4u : 2u;
     for (unsigned i = 0; i < n; i++) {
-        const uint16_t c = ms_rd16(p + 2 + i * 2);
+        const uint16_t c = ms_rd16(p + base + i * 2);
         if (bank) ppu->pal_spr[i] = c; else ppu->pal_bg[i] = c;
     }
 }
@@ -142,7 +151,10 @@ int ms_game_load(ms_game_t *g, const ms_cart_t *cart, ms_ppu_t *ppu, ms_synth_t 
         const uint8_t *e = cart->blob + cart->toc_off + (size_t)i * MS_CART_TOC_ENTRY;
         if (ms_rd32(e + 32) != MS_A_PALETTE) continue;
         ms_asset_t pa = { (const char *)e, cart->blob + ms_rd32(e + 36), ms_rd32(e + 40), MS_A_PALETTE, 0 };
-        if (g->man.palette_bg[0] && !strcmp(pa.name, g->man.palette_bg)) { apply_palette(ppu, &pa, 0); have_bg = 1; }
+        const int pbank = palette_payload_bank(&pa);
+        if (pbank == 0) { apply_palette(ppu, &pa, 0); have_bg = 1; }
+        else if (pbank == 1) { apply_palette(ppu, &pa, 1); have_spr = 1; }
+        else if (g->man.palette_bg[0] && !strcmp(pa.name, g->man.palette_bg)) { apply_palette(ppu, &pa, 0); have_bg = 1; }
         else if (g->man.palette_spr[0] && !strcmp(pa.name, g->man.palette_spr)) { apply_palette(ppu, &pa, 1); have_spr = 1; }
         else if (!have_bg) { apply_palette(ppu, &pa, 0); have_bg = 1; }
         else if (!have_spr) { apply_palette(ppu, &pa, 1); have_spr = 1; }
@@ -174,17 +186,29 @@ int ms_game_load(ms_game_t *g, const ms_cart_t *cart, ms_ppu_t *ppu, ms_synth_t 
         if (ms_cart_find_kind(cart, MS_A_BG_MAP, &map) == 0) {
             const uint8_t *md = (const uint8_t *)map.data;
             const unsigned entries = ms_rd16(md);
-            ppu->bg[0].map = (const uint16_t *)(const void *)(md + 2);
-            int mw = 0, mh = 0;
-            const int hint_w = g->man.map_w, hint_h = g->man.map_h;
-            if (hint_w > 0 && hint_h > 0 && (unsigned)hint_w * (unsigned)hint_h == entries &&
-                !(hint_w & (hint_w - 1)) && !(hint_h & (hint_h - 1))) {
-                mw = hint_w; mh = hint_h;
+            int lw = 0, lh = 0, mw = 0, mh = 0;
+            if (map.size == 6u + (size_t)entries * 2u) {      /* v2.1: dims in payload */
+                lw = ms_rd16(md + 2); lh = ms_rd16(md + 4);
+                ppu->bg[0].map = (const uint16_t *)(const void *)(md + 6);
+                for (mw = 1; mw < lw; mw <<= 1) {}
+                for (mh = 1; mh < lh; mh <<= 1) {}
+                if ((unsigned)mw * (unsigned)mh != entries) { lw = lh = 0; mw = mh = 0; }
             } else {
-                ms_map_dims(entries, &mw, &mh);   /* no hint: landscape split */
+                ppu->bg[0].map = (const uint16_t *)(const void *)(md + 2);
+            }
+            if (!mw) {
+                const int hint_w = g->man.map_w, hint_h = g->man.map_h;
+                if (hint_w > 0 && hint_h > 0 && (unsigned)hint_w * (unsigned)hint_h == entries &&
+                    !(hint_w & (hint_w - 1)) && !(hint_h & (hint_h - 1))) {
+                    mw = hint_w; mh = hint_h;
+                } else {
+                    ms_map_dims(entries, &mw, &mh);   /* no hint: landscape split */
+                }
             }
             ppu->bg[0].map_w = (uint8_t)mw;
             ppu->bg[0].map_h = (uint8_t)mh;
+            ppu->bg[0].logical_w = (uint8_t)lw;   /* 0 = use the padded dims */
+            ppu->bg[0].logical_h = (uint8_t)lh;
         }
     }
     ms_asset_t anim;

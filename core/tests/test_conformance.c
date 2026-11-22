@@ -3,6 +3,7 @@
  * T2: SPR2 canonical writer/reader, SPR1 deprecated-read with the
  *     palette-defined-exactly-once invariant. */
 #include "mosaic/ms_types.h"
+#include "mosaic/ms_render.h"
 #include "mosaic/ms_cart.h"
 #include "mosaic/ms_build.h"
 #include "mosaic/ms_game.h"
@@ -353,8 +354,122 @@ static void test_crossmount(void)
     CHECK(c.flags == 0);        /* canonical: no extension kinds */
 }
 
+
+/* ====== spec-rev 2.1: dims inside bg_map, bank inside palette ======== */
+static void test_payload_v21(void)
+{
+    static uint8_t blob[65536];
+    uint8_t tiles[3 + 64];
+    tiles[0] = 4; ms_wr16(tiles + 1, 2); memset(tiles + 3, 0x11, 64);
+
+    /* logical 3x2 tiles -> padded 4x2 = 8 entries */
+    uint8_t map[6 + 16];
+    ms_wr16(map, 8); ms_wr16(map + 2, 3); ms_wr16(map + 4, 2);
+    for (int i = 0; i < 8; i++) ms_wr16(map + 6 + i * 2, 0);
+
+    uint8_t pal[4 + 4];                        /* bank 1 = sprites */
+    ms_wr16(pal, 2); pal[2] = 1; pal[3] = 0;
+    ms_wr16(pal + 4, 0x0000); ms_wr16(pal + 6, 0xF800);
+
+    fix_t a[] = {
+        { "bg_tiles", MS_A_BG_TILES, tiles, (uint32_t)sizeof(tiles) },
+        { "bg_map",   MS_A_BG_MAP,   map,   sizeof(map) },
+        { "pal",      MS_A_PALETTE,  pal,   sizeof(pal) },
+    };
+    size_t n = pack_like_reference(blob, a, 3);
+    ms_cart_t c;
+    CHECK(ms_cart_mount(&c, blob, n) == MS_CART_OK);
+    ms_asset_t out;
+    CHECK(ms_cart_find(&c, "bg_map", &out) == MS_CART_OK);
+    const uint8_t *md2 = (const uint8_t *)out.data;
+    CHECK(ms_rd16(md2 + 2) == 3 && ms_rd16(md2 + 4) == 2);
+    CHECK(ms_cart_find(&c, "pal", &out) == MS_CART_OK);
+    const uint8_t *pd2 = (const uint8_t *)out.data;
+    CHECK(pd2[2] == 1);
+
+    /* the padded count must agree with the declared logical dims */
+    ms_wr16(map, 4);
+    n = pack_like_reference(blob, a, 3);
+    CHECK(ms_cart_mount(&c, blob, n) == MS_CART_E_ASSET);
+    ms_wr16(map, 8);
+
+    /* only banks 0 and 1 exist */
+    pal[2] = 2;
+    n = pack_like_reference(blob, a, 3);
+    CHECK(ms_cart_mount(&c, blob, n) == MS_CART_E_ASSET);
+    pal[2] = 0;
+    n = pack_like_reference(blob, a, 3);
+    CHECK(ms_cart_mount(&c, blob, n) == MS_CART_OK);
+
+    /* the v2.0 forms still mount unchanged */
+    uint8_t lmap[2 + 8], lpal[2 + 4];
+    ms_wr16(lmap, 4);
+    for (int i = 0; i < 4; i++) ms_wr16(lmap + 2 + i * 2, 0);
+    ms_wr16(lpal, 2); ms_wr16(lpal + 2, 0x0000); ms_wr16(lpal + 4, 0x001F);
+    fix_t b[] = {
+        { "bg_tiles", MS_A_BG_TILES, tiles, (uint32_t)sizeof(tiles) },
+        { "bg_map",   MS_A_BG_MAP,   lmap,  sizeof(lmap) },
+        { "pal",      MS_A_PALETTE,  lpal,  sizeof(lpal) },
+    };
+    n = pack_like_reference(blob, b, 3);
+    CHECK(ms_cart_mount(&c, blob, n) == MS_CART_OK);
+}
+
+/* ====== affine raster stepping + colour math ======== */
+static void test_render_math(void)
+{
+    CHECK(ms_color_math(0x0000, 0xF800, 0, MS_FIX_ONE) == 0xF800);   /* add */
+    CHECK(ms_color_math(0xF800, 0x0000, 1, MS_FIX_ONE) == 0x0000);   /* sub clamps at 0 */
+    CHECK(ms_color_math(0x07E0, 0xF800, 2, MS_FIX_ONE) == 0x7BE0);   /* add-half */
+    CHECK(ms_color_math(0xFFFF, 0x1234, 0, 0) == 0x1234);            /* factor 0 = off */
+
+    static uint16_t fb[32 * 16];
+    static int16_t rowshift[16];
+    static uint8_t tiles[4 * 32];
+    static uint16_t map[4];
+    memset(tiles, 0x11, sizeof(tiles));          /* every pixel = index 1 */
+    map[0] = 0x0001; map[1] = 0x0401; map[2] = 0x0801; map[3] = 0x0C01;
+
+    ms_ppu_t ppu;
+    ms_ppu_reset(&ppu, MS_MODE_AFFINE, 32, 16);
+    ppu.bg[0].tiles = tiles; ppu.bg[0].map = map;
+    ppu.bg[0].map_w = 4; ppu.bg[0].map_h = 1;
+    ppu.bg[0].logical_w = 4; ppu.bg[0].logical_h = 1;
+    ppu.bg[0].enabled = 1; ppu.bg[0].bpp = 4; ppu.bg[0].priority = 2;
+    ppu.mat[0].a = MS_FIX_ONE; ppu.mat[0].d = MS_FIX_ONE;
+    ppu.pal_bg[1] = 0xF800; ppu.pal_bg[17] = 0x07E0;
+    ppu.pal_bg[33] = 0x001F; ppu.pal_bg[49] = 0xFFFF;
+    for (int i = 0; i < 16; i++) rowshift[i] = (i >= 8) ? 16 : 0;
+    ppu.bg[0].line_scroll_x = rowshift;
+
+    ms_ppu_render(&ppu, fb);
+    CHECK(fb[0 * 32 + 16] == 0xF800);    /* identity: x=16 samples tile 0 */
+    CHECK(fb[0 * 32 + 24] == 0x07E0);    /* tile 1 via palette slot 1 */
+    CHECK(fb[8 * 32 + 16] == 0x001F);    /* raster table shifts the origin */
+    CHECK(fb[8 * 32 + 8]  == 0x07E0);
+
+    /* colour math blends the layer with what is underneath it */
+    ms_ppu_reset(&ppu, MS_MODE_AFFINE, 32, 16);
+    ppu.bg[0].tiles = tiles; ppu.bg[0].map = map;
+    ppu.bg[0].map_w = 4; ppu.bg[0].map_h = 1;
+    ppu.bg[0].logical_w = 4; ppu.bg[0].logical_h = 1;
+    ppu.bg[0].enabled = 1; ppu.bg[0].bpp = 4; ppu.bg[0].priority = 2;
+    ppu.bg[0].math = 1;
+    ppu.mat[0].a = MS_FIX_ONE; ppu.mat[0].d = MS_FIX_ONE;
+    ppu.pal_bg[1] = 0xF800;
+    ppu.fx.backdrop = 0x07E0;
+    ppu.fx.math_on = 1; ppu.fx.color_math = 2; ppu.fx.math_factor = MS_FIX_ONE;
+    ms_ppu_render(&ppu, fb);
+    CHECK(fb[0 * 32 + 16] == 0x7BE0);    /* add-half(red over green) */
+    ppu.fx.math_on = 0;
+    ms_ppu_render(&ppu, fb);
+    CHECK(fb[0 * 32 + 16] == 0xF800);    /* math off: plain layer colour */
+}
+
 int main(void)
 {
+    test_payload_v21();
+    test_render_math();
     test_spr1();
     test_spr2_roundtrip();
     test_spr2_too_many_colours();

@@ -26,7 +26,8 @@ self-contained so it builds without the PPU-16/midicore checkouts.
 | Only a stub for distributed consoles | SPI link framing, register-delta codec and role negotiation |
 
 ## Not covered (yet)
-* Affine per-scanline matrix stepping (matrices are per-frame).
+* Affine **per-scanline matrix scaling/shear** (a matrix is applied per frame;
+  per-scanline *raster-table offsets* are implemented and tested).
 * Colour-math blending modes (brightness and backdrop are implemented).
 * Cartridge save memory, rumble, link-cable multiplayer (planned, see roadmap).
 

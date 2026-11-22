@@ -434,7 +434,8 @@ int ms_convert_sprite(const char *png, const char *out, int gw, int gh, int bpp)
 
 int ms_convert_level(const char *png, int bpp, unsigned char *tiles_out, size_t *tiles_len,
                      unsigned char *map_out, size_t *map_len, unsigned short *pal_out,
-                     int *pal_count, int *map_w, int *map_h)
+                     int *pal_count, int *map_w, int *map_h,
+                     int *logical_w, int *logical_h)
 {
     int w, h; unsigned char *rgba = load_png(png, &w, &h);
     if (!rgba) return -1;
@@ -475,6 +476,8 @@ int ms_convert_level(const char *png, int bpp, unsigned char *tiles_out, size_t 
     if (pal_out) memcpy(pal_out, pal, (size_t)pn * 2);
     *tiles_len = tl; *map_len = (size_t)pw * ph * 2;
     *pal_count = pn; *map_w = pw; *map_h = ph;
+    if (logical_w) *logical_w = tw;
+    if (logical_h) *logical_h = th;
     free(tiles); free(map); stbi_image_free(rgba);
     return 0;
 }
@@ -498,7 +501,7 @@ int ms_write_png(const char *path, int w, int h, const unsigned short *rgb565)
 /* ---------------- build ---------------- */
 /* ---------------- build ---------------- */
 
-static int add_manifest(ms_cart_writer_t *cw, const project_t *p, int has_pal, int map_w, int map_h)
+static int add_manifest(ms_cart_writer_t *cw, const project_t *p, int has_pal)
 {
     char text[1024];
     int n = snprintf(text, sizeof(text),
@@ -509,11 +512,6 @@ static int add_manifest(ms_cart_writer_t *cw, const project_t *p, int has_pal, i
     if (n < 0 || n >= (int)sizeof(text)) return MS_CART_E_NOSPACE;
     if (has_pal) {
         int k = snprintf(text + n, sizeof(text) - (size_t)n, "palette_bg=pal_bg\n");
-        if (k < 0) return MS_CART_E_NOSPACE;
-        n += k;
-    }
-    if (map_w > 0 && map_h > 0) {
-        int k = snprintf(text + n, sizeof(text) - (size_t)n, "bg_map_w=%d\nbg_map_h=%d\n", map_w, map_h);
         if (k < 0) return MS_CART_E_NOSPACE;
         n += k;
     }
@@ -571,14 +569,14 @@ int ms_build_project_opts(const char *path, ms_build_result_t *out, int canonica
     }
 
     /* ---- level: tiles + map + palette ---- */
-    int has_pal = 0, map_w = 0, map_h = 0;
+    int has_pal = 0;
     if (p.level[0]) {
         char lv[256];
         snprintf(lv, sizeof(lv), "%s/%s", p.project_dir, p.level);
         static uint8_t tiles[512 * 1024], map[512 * 1024];
         static uint16_t pal[256];
-        size_t tl = 0, ml = 0; int pn = 0, mw = 0, mh = 0;
-        int rc = ms_convert_level(lv, (int)p.level_bpp, tiles, &tl, map, &ml, pal, &pn, &mw, &mh);
+        size_t tl = 0, ml = 0; int pn = 0, mw = 0, mh = 0, tw = 0, th = 0;
+        int rc = ms_convert_level(lv, (int)p.level_bpp, tiles, &tl, map, &ml, pal, &pn, &mw, &mh, &tw, &th);
         if (rc != 0) { snprintf(out->error, sizeof(out->error), "level conversion failed: %s", lv); return -5; }
         const size_t per = p.level_bpp == 8 ? 64u : 32u;
         const size_t tile_n = tl / per;
@@ -593,25 +591,30 @@ int ms_build_project_opts(const char *path, ms_build_result_t *out, int canonica
             return -5;
         }
         const size_t entries = ml / 2;
-        uint8_t *mb = malloc(2 + ml);
+        uint8_t *mb = malloc(6 + ml);          /* v2.1: count | w | h | entries */
         ms_wr16(mb, (uint16_t)entries);
-        memcpy(mb + 2, map, ml);
-        rc = ms_cart_add(&cw, "level_map", MS_A_BG_MAP, mb, 2 + ml);
+        ms_wr16(mb + 2, (uint16_t)tw);
+        ms_wr16(mb + 4, (uint16_t)th);
+        memcpy(mb + 6, map, ml);
+        rc = ms_cart_add(&cw, "level_map", MS_A_BG_MAP, mb, 6 + ml);
         free(mb);
         if (rc != MS_CART_OK) {
             snprintf(out->error, sizeof(out->error), "level map: %s (%zux%zu entries)", ms_cart_err_str(rc), entries, (size_t)1);
             return -5;
         }
-        uint8_t *pb = malloc(2 + (size_t)pn * 2);
+        uint8_t *pb = malloc(4 + (size_t)pn * 2);   /* v2.1: count | bank | rsv | entries */
         ms_wr16(pb, (uint16_t)pn);
-        for (int i = 0; i < pn; i++) ms_wr16(pb + 2 + i * 2, pal[i]);
-        rc = ms_cart_add(&cw, "pal_bg", MS_A_PALETTE, pb, 2 + (size_t)pn * 2);
+        pb[2] = 0;                                  /* bank 0 = background */
+        pb[3] = 0;                                  /* reserved */
+        for (int i = 0; i < pn; i++) ms_wr16(pb + 4 + i * 2, pal[i]);
+        rc = ms_cart_add(&cw, "pal_bg", MS_A_PALETTE, pb, 4 + (size_t)pn * 2);
         free(pb);
         if (rc != MS_CART_OK) {
             snprintf(out->error, sizeof(out->error), "palette: %s", ms_cart_err_str(rc));
             return -5;
         }
-        has_pal = 1; map_w = mw; map_h = mh;
+        has_pal = 1;
+        (void)mw; (void)mh;   /* padded dims now travel inside the map payload */
         out->tiles++; out->maps++;
     }
 
@@ -633,7 +636,7 @@ int ms_build_project_opts(const char *path, ms_build_result_t *out, int canonica
 
     /* ---- Mosaic extensions: manifest + compiled program ---- */
     if (!canonical) {
-        int rc = add_manifest(&cw, &p, has_pal, map_w, map_h);
+        int rc = add_manifest(&cw, &p, has_pal);
         if (rc != MS_CART_OK) { snprintf(out->error, sizeof(out->error), "manifest: %s", ms_cart_err_str(rc)); return -6; }
 
         static uint8_t code[MS_PROGRAM_MAX];

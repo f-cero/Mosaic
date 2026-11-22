@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Mosaic — ms_render.c: software PPU. 8x8 tiles, SNES-style maps, OAM
- * sprites, affine layers, RGB565 scanout. Pure integer. */
+ * sprites, affine layers (per-scanline stepping), colour math, RGB565
+ * scanout. Pure integer. */
 #include "mosaic/ms_render.h"
 #include <string.h>
 
@@ -38,6 +39,55 @@ static inline unsigned tile_px(const uint8_t *tiles, unsigned bpp,
 
 static int is_affine_mode(ms_mode_t m) { return m == MS_MODE_AFFINE || m == MS_MODE_AFFINE2; }
 
+/* Visible tile dims; 0 means "same as the padded map". */
+static inline int bg_lw(const ms_bg_t *bg) { return bg->logical_w ? bg->logical_w : bg->map_w; }
+static inline int bg_lh(const ms_bg_t *bg) { return bg->logical_h ? bg->logical_h : bg->map_h; }
+
+/* Palette lookup for a map entry, shared by the tile and affine paths so the
+ * two cannot drift apart (4bpp: 16-colour slot, 2bpp: 4-colour slot). */
+static inline uint16_t map_colour(const ms_ppu_t *ppu, const ms_bg_t *bg,
+                                  uint16_t e, unsigned idx)
+{
+    const unsigned slot = (e >> 10) & 7;
+    if (bg->bpp == 8) return ppu->pal_bg[idx & 0xFF];
+    if (bg->bpp == 4) return ppu->pal_bg[((slot & 0xF) * 16 + idx) & 0xFF];
+    return ppu->pal_bg[((slot & 0x3F) * 4 + idx) & 0xFF];
+}
+
+uint16_t ms_color_math(uint16_t under, uint16_t over, uint8_t mode, ms_fix factor)
+{
+    if (factor <= 0) return over;
+    if (factor > MS_FIX_ONE) factor = MS_FIX_ONE;
+    const int ro = (over >> 11) & 31, go = (over >> 5) & 63, bo = over & 31;
+    const int ru = (under >> 11) & 31, gu = (under >> 5) & 63, bu = under & 31;
+    int r, g, b;
+    switch (mode & 3) {
+    case 0:  r = ro + ru;        g = go + gu;        b = bo + bu;        break;
+    case 1:  r = ro - ru;        g = go - gu;        b = bo - bu;        break;
+    case 2:  r = (ro + ru) >> 1; g = (go + gu) >> 1; b = (bo + bu) >> 1; break;
+    default: r = (ro - ru) >> 1; g = (go - gu) >> 1; b = (bo - bu) >> 1; break;
+    }
+    r = ro + (int)(((int64_t)(r - ro) * factor) >> 16);
+    g = go + (int)(((int64_t)(g - go) * factor) >> 16);
+    b = bo + (int)(((int64_t)(b - bo) * factor) >> 16);
+    if (r < 0) r = 0; else if (r > 31) r = 31;
+    if (g < 0) g = 0; else if (g > 63) g = 63;
+    if (b < 0) b = 0; else if (b > 31) b = 31;
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+/* Composite one finished pixel. Colour math blends this layer's colour with
+ * whatever was already on that pixel (backdrop or a lower layer). */
+static inline void put_pixel(const ms_ppu_t *ppu, int math_on, uint16_t c, int x,
+                             uint16_t *color, uint8_t *rank, uint8_t rk)
+{
+    if (rk >= rank[x]) return;
+    if (math_on && ppu->fx.math_on)
+        c = ms_color_math(color[x], c, ppu->fx.color_math, ppu->fx.math_factor);
+    rank[x] = rk;
+    color[x] = c;
+}
+
 /* Draw one tile background scanline (or an affine layer when layer is
  * affine). rank[] carries the compositing order; lower is in front. */
 static void bg_scanline(const ms_ppu_t *ppu, int layer, int y,
@@ -54,43 +104,46 @@ static void bg_scanline(const ms_ppu_t *ppu, int layer, int y,
     if (is_affine_mode(ppu->mode) && layer < (int)MS_MAX_AFFINE) {
         const ms_matrix_t *m = &ppu->mat[layer];
         if (!bg->map || !bg->tiles) return;
-        const int mw = bg->map_w * 8, mh = bg->map_h * 8;
+        const int mw = bg_lw(bg) * 8, mh = bg_lh(bg) * 8;
         if (mw <= 0 || mh <= 0) return;
         const int cy = y - ppu->height / 2;
+        /* Per-scanline stepping: scroll_x/scroll_y above already fold in this
+         * line's raster-table entry, so one matrix plus a per-line offset
+         * shears or parallaxes down the screen (Mode-7 style). */
         for (int x = 0; x < w; x++) {
-            int cx = x - ppu->width / 2;
-            int64_t u = ((int64_t)m->a * cx + (int64_t)m->b * cy) >> 16;
-            int64_t v = ((int64_t)m->c * cx + (int64_t)m->d * cy) >> 16;
+            const int cx = x - ppu->width / 2;
+            const int64_t u = ((int64_t)m->a * cx + (int64_t)m->b * cy) >> 16;
+            const int64_t v = ((int64_t)m->c * cx + (int64_t)m->d * cy) >> 16;
             int sx = (int)((u + scroll_x) % mw); if (sx < 0) sx += mw;
             int sy = (int)((v + scroll_y) % mh); if (sy < 0) sy += mh;
-            unsigned mt = (unsigned)((sy >> 3) * bg->map_w + (sx >> 3));
-            uint16_t e = bg->map[mt];
-            unsigned idx = tile_px(bg->tiles, bg->bpp, e & 0x3FF, (unsigned)(sx & 7), (unsigned)(sy & 7));
+            const unsigned mt = (unsigned)((sy >> 3) * bg->map_w + (sx >> 3));
+            const uint16_t e = bg->map[mt];
+            const unsigned idx = tile_px(bg->tiles, bg->bpp, e & 0x3FF,
+                                        (unsigned)(sx & 7), (unsigned)(sy & 7));
             if (!idx) continue;
-            if (rank_bg < rank[x]) { rank[x] = rank_bg; color[x] = ppu->pal_bg[idx & 0xFF]; }
+            put_pixel(ppu, bg->math, map_colour(ppu, bg, e, idx), x, color, rank, rank_bg);
         }
         return;
     }
 
     if (!bg->map || !bg->tiles || bg->map_w == 0 || bg->map_h == 0) return;
+    const int lw = bg_lw(bg), lh = bg_lh(bg);
     const int mask_x = bg->map_w - 1, mask_y = bg->map_h - 1;
+    const int pow_x = (lw & (lw - 1)) == 0, pow_y = (lh & (lh - 1)) == 0;
     for (int x = 0; x < w; x++) {
         int sx = x + scroll_x, sy = y + scroll_y;
         if (bg->mosaic > 1) { sx &= ~(bg->mosaic - 1); sy &= ~(bg->mosaic - 1); }
-        int tx = (sx >> 3) & mask_x, ty = (sy >> 3) & mask_y;
-        uint16_t e = bg->map[ty * bg->map_w + tx];
+        int tx = (sx >> 3), ty = (sy >> 3);
+        if (pow_x) tx &= mask_x; else { tx %= lw; if (tx < 0) tx += lw; }
+        if (pow_y) ty &= mask_y; else { ty %= lh; if (ty < 0) ty += lh; }
+        const uint16_t e = bg->map[ty * bg->map_w + tx];
         unsigned px = (unsigned)(sx & 7), py = (unsigned)(sy & 7);
         if (e & 0x4000) px = 7 - px;
         if (e & 0x8000) py = 7 - py;
-        unsigned idx = tile_px(bg->tiles, bg->bpp, e & 0x3FF, px, py);
+        const unsigned idx = tile_px(bg->tiles, bg->bpp, e & 0x3FF, px, py);
         if (!idx) continue;
-        unsigned pal_slot = (e >> 10) & 7;
-        uint16_t c;
-        if (bg->bpp == 8) c = ppu->pal_bg[idx & 0xFF];
-        else if (bg->bpp == 4) c = ppu->pal_bg[((pal_slot & 0xF) * 16 + idx) & 0xFF];
-        else c = ppu->pal_bg[((pal_slot & 0x3F) * 4 + idx) & 0xFF];
-        uint8_t rk = (e & 0x2000) ? (uint8_t)(rank_bg - 1) : rank_bg;
-        if (rk < rank[x]) { rank[x] = rk; color[x] = c; }
+        const uint8_t rk = (e & 0x2000) ? (uint8_t)(rank_bg - 1) : rank_bg;
+        put_pixel(ppu, bg->math, map_colour(ppu, bg, e, idx), x, color, rank, rk);
     }
 }
 
@@ -127,7 +180,11 @@ static void sprite_scanline(const ms_ppu_t *ppu, const ms_oam_t *o, int y,
         uint16_t c;
         if ((o->bpp ? o->bpp : 4) == 8) c = ppu->pal_spr[idx & 0xFF];
         else c = ppu->pal_spr[((o->pal_slot & 0xF) * 16 + idx) & 0xFF];
-        if (rk <= rank[x]) { rank[x] = rk; color[x] = c; }
+        if (rk <= rank[x]) {
+            if ((o->flags & MS_OAM_MATH) && ppu->fx.math_on)
+                c = ms_color_math(color[x], c, ppu->fx.color_math, ppu->fx.math_factor);
+            rank[x] = rk; color[x] = c;
+        }
     }
 }
 
@@ -140,7 +197,7 @@ void ms_ppu_render(ms_ppu_t *ppu, uint16_t *fb)
     if (ppu->fx.brightness < 16) backdrop = ms_rgb565_bright(backdrop, ppu->fx.brightness);
 
     for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) { color[x] = ppu->fx.backdrop; rank[x] = RANK_BACKDROP; }
+        for (int x = 0; x < w; x++) { color[x] = backdrop; rank[x] = RANK_BACKDROP; }
 
         bg_scanline(ppu, 1, y, color, rank, w);
         bg_scanline(ppu, 0, y, color, rank, w);
