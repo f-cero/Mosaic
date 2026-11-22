@@ -10,6 +10,20 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* Portable scratch paths: /tmp does not exist on Windows; use %TEMP%. */
+static char s_tp[8][260];
+static int  s_tpi;
+static const char *tpath(const char *name)
+{
+    char *buf = s_tp[s_tpi++ & 7];
+    const char *d = getenv("TEMP");
+    if (!d || !*d) d = getenv("TMP");
+    if (!d || !*d) d = getenv("TMPDIR");
+    if (!d || !*d) d = "/tmp";
+    snprintf(buf, sizeof(s_tp[0]), "%s/%s", d, name);
+    return buf;
+}
+
 static int fails;
 #define CHECK(x) do { if (!(x)) { fails++; fprintf(stderr, "FAIL %s:%d %s\n", __FILE__, __LINE__, #x); } } while (0)
 
@@ -73,8 +87,8 @@ static void test_spr2_roundtrip(void)
         else c = 0x001F;                                /* blue  */
         px[y * W + x] = c;
     }
-    const char *png = "/tmp/mosaic_spr2_roundtrip.png";
-    const char *spr = "/tmp/mosaic_spr2_roundtrip.spr2";
+    const char *png = tpath("mosaic_spr2_roundtrip.png");
+    const char *spr = tpath("mosaic_spr2_roundtrip.spr2");
     CHECK(ms_write_png(png, W, H, px) == 0);
     int rc = ms_convert_sprite(png, spr, 16, 16, 4);
     CHECK(rc == 0);
@@ -132,8 +146,8 @@ static void test_spr2_too_many_colours(void)
     static uint16_t px[W * H];
     for (int i = 0; i < W * H; i++)
         px[i] = (uint16_t)(0x8000u | (unsigned)(i * 137u) & 0x7FFFu);  /* 256 distinct */
-    const char *png = "/tmp/mosaic_spr2_many.png";
-    const char *spr = "/tmp/mosaic_spr2_many.spr2";
+    const char *png = tpath("mosaic_spr2_many.png");
+    const char *spr = tpath("mosaic_spr2_many.spr2");
     CHECK(ms_write_png(png, W, H, px) == 0);
     CHECK(ms_convert_sprite(png, spr, 16, 16, 4) == -7);   /* 4bpp allows 15 colours */
 }
@@ -294,11 +308,13 @@ static void test_crossmount(void)
     enum { W = 16, H = 16 };
     static uint16_t px[W * H];
     for (int i = 0; i < W * H; i++) px[i] = (uint16_t)((i % 3 == 0) ? 0xF800 : (i % 3 == 1) ? 0x07E0 : 0x001F);
-    CHECK(ms_write_png("/tmp/mosaic_xm.png", W, H, px) == 0);
-    CHECK(ms_convert_sprite("/tmp/mosaic_xm.png", "/tmp/mosaic_xm.spr2", 16, 16, 4) == 0);
+    const char *xm_png = tpath("mosaic_xm.png");
+    const char *xm_spr = tpath("mosaic_xm.spr2");
+    CHECK(ms_write_png(xm_png, W, H, px) == 0);
+    CHECK(ms_convert_sprite(xm_png, xm_spr, 16, 16, 4) == 0);
 
     static uint8_t spr[4096];
-    FILE *f = fopen("/tmp/mosaic_xm.spr2", "rb");
+    FILE *f = fopen(xm_spr, "rb");
     CHECK(f != NULL);
     if (!f) return;
     const size_t sprn = fread(spr, 1, sizeof(spr), f);
