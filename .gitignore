@@ -1,0 +1,11 @@
+build/
+*.o
+*.a
+*.mcart
+*.mrom
+*.png.tmp
+studio/mosaic-studio
+mosaic
+*.mrom
+canon.mcart
+.DS_Store

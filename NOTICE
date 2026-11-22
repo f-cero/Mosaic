@@ -1,0 +1,18 @@
+Mosaic — modular handheld console, engine and studio
+Copyright 2026 Mosaic contributors
+
+Licensed under the Apache License, Version 2.0.
+
+Mosaic is a new, standalone implementation. It extracts the normative
+platform contract (display limits, tile/OAM model, MIDI-only audio policy,
+cart budget and enforcement model) from the ESP-16 reference platform:
+
+  ESP-16 Game Platform — https://github.com/f-cero/esp16-platform
+  PPU-16 (ESP-PPU)      — https://github.com/f-cero/ESP-PPU
+  midicore              — https://github.com/f-cero/midicore
+  all Apache-2.0, Copyright 2026 their contributors.
+
+Third-party components:
+  stb_image / stb_image_write — public domain / MIT (nothings/stb)
+  font8x8_basic — public domain (Daniel Hepper)
+  SDL2 — zlib license (only linked by Mosaic Studio)

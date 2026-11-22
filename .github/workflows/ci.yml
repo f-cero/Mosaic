@@ -1,0 +1,22 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: deps
+        run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev
+      - name: configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: build
+        run: cmake --build build -j
+      - name: test
+        run: ctest --test-dir build --output-on-failure
+      - name: build the example cart and validate it
+        run: |
+          cd examples/starfall
+          ../../build/mosaic build starfall.mpj -o starfall.mcart
+          ../../build/mosaic validate starfall.mcart
+          ../../build/mosaic build starfall.mpj -o canon.mcart --canonical
+          ../../build/mosaic validate canon.mcart
