@@ -1,0 +1,111 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v1.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  VER: 1.1.0
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev
+      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build -j
+      - run: ctest --test-dir build --output-on-failure
+      - name: package
+        run: |
+          set -e
+          D=mosaic-${VER}-linux-x86_64
+          mkdir -p $D/bin $D/examples $D/docs
+          cp README.md LICENSE NOTICE $D/
+          cp docs/*.md $D/docs/
+          cp -r examples/starfall $D/examples/
+          rm -f $D/examples/starfall/*.mrom $D/examples/starfall/*.mcart || true
+          cp build/mosaic build/mosaic-studio $D/bin/
+          strip -s $D/bin/mosaic $D/bin/mosaic-studio
+          tar czf $D.tar.gz $D
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: mosaic-*-linux-x86_64.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          pacman: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-SDL2
+      - run: cmake -S . -B build-win -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release -DSDL2_DIR=/mingw64/lib/cmake/SDL2
+      - run: cmake --build build-win -j
+      - name: test
+        run: |
+          ./build-win/mosaic_tests.exe
+          ./build-win/mosaic_conformance.exe
+      - name: package
+        run: |
+          set -e
+          D=mosaic-${VER}-windows-x86_64
+          mkdir -p $D/bin $D/examples $D/docs
+          cp README.md LICENSE NOTICE $D/
+          cp docs/*.md $D/docs/
+          cp -r examples/starfall $D/examples/
+          rm -f $D/examples/starfall/*.mrom $D/examples/starfall/*.mcart || true
+          cp build-win/mosaic.exe build-win/mosaic-studio.exe $D/bin/
+          cp /mingw64/bin/SDL2.dll $D/bin/
+          powershell -Command "Compress-Archive -Path $D -DestinationPath $D.zip -Force"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: mosaic-*-windows-x86_64.zip
+
+  publish:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: checksums
+        run: sha256sum mosaic-*.tar.gz mosaic-*.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: Mosaic ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Mosaic — modular handheld console, engine and studio (Apache-2.0).
+
+            | Platform | Archive |
+            |---|---|
+            | Linux x86_64 | `mosaic-*-linux-x86_64.tar.gz` |
+            | Windows x86_64 (SDL2 bundled) | `mosaic-*-windows-x86_64.zip` |
+
+            Each archive: `bin/mosaic` (build · validate · run · convert · rom),
+            `bin/mosaic-studio` (node graph editor + live engine preview), the
+            Starfall example project and the format/spec documents.
+            Verify with `SHA256SUMS.txt`. Linux Studio needs `libsdl2-2.0-0`.
+          files: |
+            mosaic-*.tar.gz
+            mosaic-*.zip
+            SHA256SUMS.txt

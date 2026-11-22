@@ -1,0 +1,11 @@
+# Cross-compile for Windows x86_64 with mingw-w64 (same toolchain family as
+# the MSYS2 build used by .github/workflows/release.yml).
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_PROCESSOR x86_64)
+set(TOOLCHAIN_PREFIX x86_64-w64-mingw32)
+set(CMAKE_C_COMPILER   ${TOOLCHAIN_PREFIX}-gcc)
+set(CMAKE_RC_COMPILER  ${TOOLCHAIN_PREFIX}-windres)
+set(CMAKE_FIND_ROOT_PATH /usr/${TOOLCHAIN_PREFIX} $ENV{SDL2_MINGW})
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)

@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <unistd.h>
 #include "font8x8_basic.h"
+#include "ms_platform.h"
 #include "mosaic/ms_build.h"
 #include "mosaic/ms_cart.h"
 #include "mosaic/ms_core.h"
@@ -128,11 +128,11 @@ static void project_save(void)
 static void do_build(void)
 {
     project_save();
-    char old[512]; if(!getcwd(old,sizeof(old))) old[0]=0;
-    if(g_dir[0]) (void)!chdir(g_dir);
+    char old[512]; if(!MS_GETCWD(old,sizeof(old))) old[0]=0;
+    if(g_dir[0]) (void)!MS_CHDIR(g_dir);
     static ms_build_result_t r;
     int rc = ms_build_project(g_path, &r);
-    if(g_dir[0]) (void)!chdir(old);
+    if(g_dir[0]) (void)!MS_CHDIR(old);
     if(rc!=0){ setlog(r.error,0); return; }
     memcpy(g_cartbuf,r.cart,r.cart_len); g_cartlen=r.cart_len;
     ms_cart_unmount(&g_cart);
@@ -151,7 +151,7 @@ static void do_export(void)
 {
     if(!g_cartlen){ setlog("build first",0); return; }
     char out[300]; snprintf(out,sizeof(out),"%s/build/game.mcart",g_dir);
-    char mk[320]; snprintf(mk,sizeof(mk),"mkdir -p %s/build",g_dir); (void)system(mk);
+    char mk[320]; snprintf(mk,sizeof(mk),"%s/build",g_dir); ms_mkdir_p(mk);
     FILE *f=fopen(out,"wb");
     if(!f){ setlog("cannot write export",0); return; }
     fwrite(g_cartbuf,1,g_cartlen,f); fclose(f);
@@ -264,12 +264,12 @@ static void draw_assets(void)
     fill(ox,oy,W-232-268,H-48-100,(SDL_Color){18,20,30,255});
     text(ox+20,oy+14,"ASSETS",1,(SDL_Color){150,160,180,255});
     char cmd[320]; snprintf(cmd,sizeof(cmd),"ls -1 %s/assets 2>/dev/null",g_dir);
-    FILE *p=popen(cmd,"r"); char ln[128]; int y=oy+50;
+    FILE *p=MS_POPEN(cmd,"r"); char ln[128]; int y=oy+50;
     if(p){ while(fgets(ln,sizeof(ln),p)&&y<oy+500){ char *n=strpbrk(ln,"\r\n"); if(n)*n=0;
         fill(ox+40,y,300,22,(SDL_Color){26,30,42,255}); text(ox+50,y+7,ln,1,(SDL_Color){210,215,230,255});
         const char *ext=strrchr(ln,'.'); 
         text(ox+360,y+7, ext?ext:"",1,(SDL_Color){120,200,255,255});
-        y+=28; } pclose(p); }
+        y+=28; } MS_PCLOSE(p); }
     text(ox+40,oy+540,"PNG -> SPR2 / level tileset + map, SMF -> music. Run `mosaic convert`.",1,(SDL_Color){130,140,160,255});
 }
 
