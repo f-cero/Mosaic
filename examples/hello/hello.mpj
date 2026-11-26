@@ -1,0 +1,27 @@
+# Mosaic project — Hello Mosaic (tutorial)
+title=Hello Mosaic
+author=Tutorial
+mode=rich
+qfa=0
+voices=8
+music_voices=6
+sfx_voices=2
+backdrop=0x0000
+level=assets/level.png 4
+sheet player assets/player.png 16 16 4
+entity player play sheet=0 x=160 y=120 anim=0 priority=1
+node 1 update 40 40
+node 2 if 220 40
+node 3 held 220 150 mask=4
+node 4 addx 400 40 amount=-1.5
+node 6 if 220 80
+node 7 held 220 190 mask=8
+node 8 addx 400 90 amount=1.5
+node 10 wait 400 180 frames=1
+link 1.next 2.in
+link 2.then 4.in
+link 2.cond 3.out
+link 2.next 6.in
+link 6.then 8.in
+link 6.cond 7.out
+link 6.next 10.in
