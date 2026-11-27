@@ -6,6 +6,10 @@ qfa=0
 voices=8
 music_voices=6
 sfx_voices=2
+dev=tutorial
+save_id=hello
+save=8192
+save_loc=console
 backdrop=0x0000
 level=assets/level.png 4
 sheet player assets/player.png 16 16 4
