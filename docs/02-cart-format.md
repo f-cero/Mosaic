@@ -115,3 +115,12 @@ as `save=` / `save_slots=`) makes a cart's save capability inspectable before
 it runs: `mosaic save init` sizes the image from this asset, and a cart without
 it cannot be written to at all. The image bytes themselves live outside the
 cart (SRAM, a flash partition, a host file) — the cart only declares the shape.
+
+## No authentication field
+
+cart16 v2 carries no signature, key, publisher id, nonce or usage counter, and
+Mosaic will not add one. The header holds the magic, a format version, a flags
+word, the record count, the TOC offset and the TOC checksum - nothing else.
+`MS_CART_F_EXT` is a *format* marker: it tells a strict cart16 v2 reader that
+Mosaic extension kinds are present so it rejects the cart instead of misparsing
+it. It is not a permission bit. See FREEDOM.md.

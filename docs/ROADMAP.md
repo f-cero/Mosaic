@@ -223,3 +223,9 @@ transport-agnostic byte stream. So the server reuses it verbatim:
 The loopback test above. It is the only honest way to claim "multiplayer works"
 without owning two consoles: the clients' rendered frames must hash equal to
 the server's, frame for frame.
+
+## Copying
+
+- [x] ROM dumper (`mosaic dump`), the on-device `.msdm` container, running a
+      dumped game from storage, identity-optional save import (`--any`), and
+      FREEDOM.md as a normative document the code is held to.

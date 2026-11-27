@@ -147,3 +147,28 @@ whichever home holds the newest copy of the slot, reporting which one it was.
   DRM scheme and must not be described as one.
 
 A cart without a kind 13 asset (§02) is **read-only by construction**.
+
+## Copying a cartridge
+
+A cartridge is a passive memory and is read as one. `ms_dump_cart` copies the
+image in a single forward pass - header, TOC, then every remaining byte through
+a 256-byte buffer - so the source may be unseekable and the sink may be smaller
+than the game. Payload checksums are accumulated as the bytes pass; a payload
+that fails is reported, and the copy is still completed. There is no identity,
+no key and no counter anywhere in the path. `MS_DUMP_SCRATCH` (3092 bytes) is
+the only working memory the dumper needs.
+
+An on-device dump is one file, `.msdm`:
+
+```
+u32 'MSDM' | u16 ver=1 | u16 flags | u32 total
+u32 rom_off | u32 rom_bytes | u32 rom_crc32
+u32 sram_off | u32 sram_bytes | u32 sram_crc32
+char title[32] | u32 crc32(first 68 bytes)
+```
+
+The ROM at `rom_off` is a complete cart16 v2 image, mounted directly with
+`ms_cart_mount`. The SRAM at `sram_off` is a complete MOS1 save image. A console
+can run a game from its own storage with the cartridge absent, and a game
+cannot distinguish that from the cartridge, because nothing in the format or
+the API records where the bytes came from.

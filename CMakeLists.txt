@@ -9,6 +9,7 @@ endif()
 add_library(mosaic_core STATIC
     core/src/ms_util.c core/src/ms_render.c core/src/ms_audio.c
     core/src/ms_input.c core/src/ms_cart.c core/src/ms_vm.c
+    core/src/ms_dump.c
     core/src/ms_game.c core/src/ms_core.c core/src/ms_build.c
     core/src/ms_link.c core/src/ms_device.c core/src/ms_video.c
     core/src/ms_save.c
@@ -60,6 +61,9 @@ add_test(NAME mosaic_matrix_test COMMAND mosaic_matrix_test)
 add_executable(mosaic_save_test core/tests/test_save.c)
 target_link_libraries(mosaic_save_test PRIVATE mosaic_core)
 add_test(NAME mosaic_save_test COMMAND mosaic_save_test)
+add_executable(mosaic_dump_test core/tests/test_dump.c)
+target_link_libraries(mosaic_dump_test PRIVATE mosaic_core)
+add_test(NAME mosaic_dump_test COMMAND mosaic_dump_test)
 
 # The web decoder must render every frame bit-identically to the C decoder.
 find_program(PYTHON3_EXECUTABLE python3)

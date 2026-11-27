@@ -625,7 +625,8 @@ int ms_save_bundle_export(const ms_save_t *s, uint32_t device_id,
     return MS_SAVE_OK;
 }
 
-int ms_save_bundle_import(ms_save_t *s, const void *blob, size_t bytes, unsigned *flags)
+int ms_save_bundle_import_ex(ms_save_t *s, const void *blob, size_t bytes,
+                             int any_identity, unsigned *flags)
 {
     if (flags) *flags = 0;
     if (!s || !s->region || !blob) return MS_SAVE_E_PARAM;
@@ -639,8 +640,8 @@ int ms_save_bundle_import(ms_save_t *s, const void *blob, size_t bytes, unsigned
     if (ms_crc32(p, bytes - 4u) != ms_rd32(p + bytes - 4u)) return MS_SAVE_E_CRC;
     if (ver == 2u) {
         const uint32_t dev = (uint32_t)ms_rd16(p + 16) | ((uint32_t)ms_rd16(p + 18) << 16);
-        if (dev && s->dev_id && dev != s->dev_id) return MS_SAVE_E_DEV;
-        if (ms_rd32(p + 8) != s->app_id) {
+        if (!any_identity && dev && s->dev_id && dev != s->dev_id) return MS_SAVE_E_DEV;
+        if (!any_identity && ms_rd32(p + 8) != s->app_id) {
             int linked = 0;
             (void)linked;   /* a bundle import is a write: never linked */
             return MS_SAVE_E_APP;
@@ -665,4 +666,11 @@ int ms_save_bundle_import(ms_save_t *s, const void *blob, size_t bytes, unsigned
         at += rec + l;
     }
     return MS_SAVE_OK;
+}
+
+/* A save is the player's data. Importing between builds is the player's
+ * business, so the identity checks are optional and the default stays strict. */
+int ms_save_bundle_import(ms_save_t *s, const void *blob, size_t bytes, unsigned *flags)
+{
+    return ms_save_bundle_import_ex(s, blob, bytes, 0, flags);
 }

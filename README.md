@@ -83,3 +83,16 @@ Open work — sprite matrices, save formats, dedicated server — is planned in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
 License: Apache-2.0 (`LICENSE`, `NOTICE`).
+
+## Freedom
+
+There is no DRM in Mosaic and there will be none: cartridges carry no
+signature, the runtime has no lockout, and copying is a documented command.
+
+```
+mosaic dump game.mcart -o game.msdm --saves game.msav   # cart + its SRAM, one file
+mosaic run  game.msdm                                   # plays with the cart absent
+```
+
+Read [FREEDOM.md](FREEDOM.md) for the full statement, including what every check
+in the platform actually protects and how to get past it.

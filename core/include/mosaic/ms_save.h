@@ -163,6 +163,10 @@ void ms_save_id_from_cfg(ms_save_id_t *id, const ms_save_cfg_t *cfg, uint8_t loc
 #define MS_SAVE_BUNDLE_MAGIC 0x3156534Du   /* "MSV1" little-endian */
 int ms_save_bundle_export(const ms_save_t *s, uint32_t device_id,
                           void *out, size_t cap, size_t *len);
+/* Import ignoring the bundle's dev/app identity (records are re-signed with
+ * this image's key): a save the player owns may follow the player. */
+int ms_save_bundle_import_ex(ms_save_t *s, const void *blob, size_t bytes,
+                             int any_identity, unsigned *flags);
 int ms_save_bundle_import(ms_save_t *s, const void *blob, size_t bytes,
                           unsigned *flags);
 

@@ -2,6 +2,7 @@
 /* mosaic — command line: build, validate, run, inspect, convert, rom. */
 #include "mosaic/ms_build.h"
 #include "mosaic/ms_cart.h"
+#include "mosaic/ms_dump.h"
 #include "mosaic/ms_core.h"
 #include "mosaic/ms_game.h"
 #include "mosaic/ms_input.h"
@@ -26,6 +27,7 @@ static int usage(void)
            "  inspect <game.mcart>\n"
            "  convert <in.png> <out.spr2> [--grid 16x16] [--bpp 4]\n"
            "  rom <game.mcart> [-o game.mrom]\n"
+           "  dump <game.mcart> [-o dump.msdm] [--saves img.msav] [--verify]\n"
            "  save init <cart> <img.msav> [--loc console|cart]   format an image\n"
            "  save list <cart> <img.msav>       home, dev, save id, slots\n"
            "  save link <cart> <img.msav>       may this cart read this image?\n"
@@ -96,8 +98,14 @@ static int cmd_run(int argc, char **argv)
     }
     size_t n; uint8_t *b = slurp(argv[2], &n);
     if (!b) { fprintf(stderr, "cannot read %s\n", argv[2]); return 2; }
+    const uint8_t *cb = b; size_t cn = n;
+    ms_dump_container_t box;
+    if (ms_dump_container_open(&box, b, n) == MS_DUMP_OK) {
+        cb = box.rom; cn = box.rom_bytes;
+        printf("running dump %s (%zu rom + %u sram)\n", box.title, cn, box.sram_bytes);
+    }
     ms_cart_t cart;
-    if (ms_cart_mount(&cart, b, n) != MS_CART_OK) { fprintf(stderr, "cart invalid: %s\n", ms_cart_err_str(ms_cart_mount(&cart, b, n))); return 3; }
+    if (ms_cart_mount(&cart, cb, cn) != MS_CART_OK) { fprintf(stderr, "cart invalid: %s\n", ms_cart_err_str(ms_cart_mount(&cart, cb, cn))); return 3; }
     ms_config_t cfg = { 0 };
     cfg.audio_hz = MS_AUDIO_HZ; cfg.voices = 16; cfg.music_voices = 12; cfg.sfx_voices = 4;
     ms_core_t core;
@@ -208,6 +216,50 @@ static const char *loc_name(unsigned loc)
     return loc == MS_SAVE_LOC_CART ? "cartridge" : "console";
 }
 
+/* Read a cartridge out. Not a backup feature and not a privilege: it is the
+ * only reasonable thing to do with a memory the player owns. */
+static int cmd_dump(int argc, char **argv)
+{
+    const char *src = argv[2], *out = NULL, *saves = NULL;
+    for (int i = 3; i < argc; i++) {
+        if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(argv[i], "--saves") && i + 1 < argc) saves = argv[++i];
+    }
+    size_t n = 0; uint8_t *b = slurp(src, &n);
+    if (!b) { fprintf(stderr, "cannot read %s\n", src); return 2; }
+    ms_dump_result_t r;
+    int rc = ms_dump_blob(b, n, &r);
+    printf("%s: %zu bytes, %u records, %u verified, %u failed, crc %08x%s%s\n",
+           src, n, r.records, r.verified, r.failed, r.crc,
+           r.title[0] ? "  " : "", r.title);
+    if (rc != MS_DUMP_OK && rc != MS_DUMP_E_VERIFY) {
+        fprintf(stderr, "dump: %s\n", ms_dump_err_str(rc));
+        free(b); return 5;
+    }
+    if (!out) { free(b); return rc == MS_DUMP_OK ? 0 : 6; }
+
+    if (saves) {
+        size_t sn = 0; uint8_t *s = slurp(saves, &sn);
+        if (!s) { fprintf(stderr, "cannot read %s\n", saves); free(b); return 2; }
+        const size_t need = ms_dump_container_need((uint32_t)n, (uint32_t)sn);
+        uint8_t *box = malloc(need);
+        size_t blen = 0;
+        int brc = box ? ms_dump_container_build(box, need, b, (uint32_t)n, s,
+                                                (uint32_t)sn, r.title, &blen)
+                      : MS_DUMP_E_PARAM;
+        free(s);
+        if (brc != MS_DUMP_OK) { fprintf(stderr, "container: %s\n", ms_dump_err_str(brc)); free(b); free(box); return 5; }
+        if (img_store(out, box, blen) != 0) { fprintf(stderr, "cannot write %s\n", out); free(b); free(box); return 6; }
+        printf("dumped %s -> %s (%zu bytes: %zu rom + %zu sram)\n", src, out, blen, n, sn);
+        free(box); free(b);
+        return 0;
+    }
+    if (img_store(out, b, n) != 0) { fprintf(stderr, "cannot write %s\n", out); free(b); return 6; }
+    printf("dumped %s -> %s (%zu bytes)\n", src, out, n);
+    free(b);
+    return rc == MS_DUMP_OK ? 0 : 6;
+}
+
 static int cmd_save(int argc, char **argv)
 {
     if (argc < 4) return usage();
@@ -256,7 +308,9 @@ static int cmd_save(int argc, char **argv)
         if (!p) { fprintf(stderr, "cannot open %s\n", img); free(bb); return 4; }
         ms_save_t s; unsigned fl = 0;
         int rc = ms_save_open(&s, p, cfg.bytes, &id, &fl);
-        if (rc == MS_SAVE_OK) rc = ms_save_bundle_import(&s, bb, bn, &fl);
+        int any = 0;
+        for (int i = 5; i < argc; i++) if (!strcmp(argv[i], "--any")) any = 1;
+        if (rc == MS_SAVE_OK) rc = ms_save_bundle_import_ex(&s, bb, bn, any, &fl);
         if (rc == MS_SAVE_OK && img_store(img, p, cfg.bytes) != 0) rc = MS_SAVE_E_NOSPACE;
         free(bb); free(p);
         if (rc != MS_SAVE_OK) { fprintf(stderr, "save import: %s\n", ms_save_err_str(rc)); return 5; }
@@ -385,6 +439,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "run")) return argc >= 3 ? cmd_run(argc, argv) : usage();
     if (!strcmp(argv[1], "convert")) return argc >= 4 ? cmd_convert(argc, argv) : usage();
     if (!strcmp(argv[1], "rom")) return argc >= 3 ? cmd_rom(argc, argv) : usage();
+    if (!strcmp(argv[1], "dump")) return cmd_dump(argc, argv);
     if (!strcmp(argv[1], "save")) return cmd_save(argc, argv);
     if (!strcmp(argv[1], "video")) return mosaic_video_main(argc, argv);
     if (!strcmp(argv[1], "audio")) return mosaic_audio_main(argc, argv);
