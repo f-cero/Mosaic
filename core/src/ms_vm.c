@@ -46,6 +46,7 @@ static int run(ms_vm_t *vm, ms_vm_entity_t *en, int budget)
         uint32_t next = en->pc + 4;
         if (op == MSOP_LDI32) next = en->pc + 6;
         if (op == MSOP_BGTILE || op == MSOP_PALENTRY) next = en->pc + 5;
+        if (op == MSOP_SETMAT) next = en->pc + 6;
         uint8_t a = ip[1], b = ip[2], c = ip[3];
         int16_t imm = (int16_t)(b | (c << 8));
         ms_fix *reg = (ms_fix *)en->reg;
@@ -155,6 +156,17 @@ static int run(ms_vm_t *vm, ms_vm_entity_t *en, int budget)
         case MSOP_LOADENT: en->reg[a & 15] = 0; break;
         case MSOP_LOADTIMER: en->reg[a & 15] = (ms_fix)(int32_t)en->e.timer; break;
         case MSOP_LOADFRAME: en->reg[a & 15] = vm->frame; break;
+        case MSOP_SETMAT:
+            /* op, slot, ra, rb, rc, rd: write a shared matrix slot. */
+            if (vm->game && vm->game->ppu && (a & 15) < MS_MAX_MATRICES) {
+                ms_matrix_t m;
+                m.a = reg[ip[2] & 15]; m.b = reg[ip[3] & 15];
+                m.c = reg[ip[4] & 15]; m.d = reg[ip[5] & 15];
+                vm->game->ppu->mat[a & 15] = m;
+            }
+            break;
+        case MSOP_AFFINE: en->e.affine = (imm < 0) ? -1 : (int16_t)(imm & 15); break;
+        case MSOP_LINETAB: en->e.line_tab = (imm < 0) ? -1 : imm; break;
         case MSOP_SEED: vm->rng = vm->rng ? vm->rng : (uint32_t)imm * 2654435761u; break;
         default:
             set_err(vm, "bad opcode");
@@ -196,6 +208,8 @@ int ms_vm_spawn(ms_vm_t *vm, int def_index)
         en->e.priority = d->priority;
         en->e.flags = d->flags;
         en->e.spawn_frame = vm->frame;
+        en->e.affine = -1;
+        en->e.line_tab = -1;
         memcpy(en->e.name, d->name, 16);
         en->parent = -1;
         if (i >= vm->count) vm->count = (uint16_t)(i + 1);

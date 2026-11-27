@@ -38,8 +38,10 @@ manifest asset, not in the header.
 | 8 | PROGRAM | `MVM1` bytecode — **Mosaic extension** |
 | 9 | MANIFEST | `key=value` text — **Mosaic extension** |
 | 10 | ANIM | `u16 count, {u16 first,u16 frames,u16 fps,u8 loop,u8 pad}[]` — **Mosaic extension** |
+| 11 | MVID | MVID v1 tile video (`docs/10-fmv.md`) — **Mosaic extension** |
+| 12 | MATRICES | `u16 tables, u16 0, u16 rows[tables] (pad to 4), Σrows × {i32 a,b,c,d}` — **Mosaic extension** |
 
-Kinds 8–10 require the `MS_CART_F_EXT` flag; a strict cart16 v2 reader
+Kinds 8–12 require the `MS_CART_F_EXT` flag; a strict cart16 v2 reader
 (the reference one) refuses them, which is exactly the intended behaviour:
 `mosaic build --canonical` emits a cart without them.
 

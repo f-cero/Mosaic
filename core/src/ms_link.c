@@ -66,6 +66,7 @@ size_t ms_link_encode_ppu_delta(const ms_ppu_t *ppu, void *out, size_t cap)
     if (!ppu || !out || cap < 64) return 0;
     size_t o = 1;
     int n = 0;
+    /* 1: background scroll */
     for (int b = 0; b < 2; b++) {
         if (!ppu->bg[b].enabled) continue;
         if (o + 6 > cap) break;
@@ -76,10 +77,12 @@ size_t ms_link_encode_ppu_delta(const ms_ppu_t *ppu, void *out, size_t cap)
         p[o++] = (uint8_t)((ppu->bg[b].scroll_y >> 8) & 0xFF);
         n++;
     }
+    /* 2: backdrop */
     if (o + 3 <= cap) { p[o++] = 2; ms_wr16(p + o, ppu->fx.backdrop); o += 2; n++; }
+    /* 3: one sprite: idx, x, y, w, h, priority|flags, pal, affine, line_rows */
     for (uint16_t i = 0; i < ppu->oam_count && i < MS_MAX_SPRITES; i++) {
         const ms_oam_t *s = &ppu->oam[i];
-        if (o + 10 > cap) break;
+        if (o + 13 > cap) break;
         p[o++] = 3;
         p[o++] = (uint8_t)i;
         p[o++] = (uint8_t)(s->x & 0xFF); p[o++] = (uint8_t)((s->x >> 8) & 0xFF);
@@ -87,6 +90,28 @@ size_t ms_link_encode_ppu_delta(const ms_ppu_t *ppu, void *out, size_t cap)
         p[o++] = s->w; p[o++] = s->h;
         p[o++] = (uint8_t)((s->priority & 3) | (s->flags & 0xC0));
         p[o++] = s->pal_slot;
+        p[o++] = (uint8_t)(s->affine < 0 ? 0xFF : s->affine);
+        p[o++] = (uint8_t)(s->line_mat ? (s->line_rows ? s->line_rows : s->h) : 0);
+        n++;
+    }
+    /* 4: the shared matrix set, whole (16 x 16 B) — cheap and idempotent */
+    for (int m = 0; m < (int)MS_MAX_MATRICES; m++) {
+        if (o + 18 > cap) break;
+        p[o++] = 4; p[o++] = (uint8_t)m;
+        memcpy(p + o, &ppu->mat[m], 16); o += 16; n++;
+    }
+    /* 5: per-scanline table contents, clipped at the frame budget */
+    for (uint16_t i = 0; i < ppu->oam_count && i < MS_MAX_SPRITES; i++) {
+        const ms_oam_t *s = &ppu->oam[i];
+        if (!s->line_mat) continue;
+        const uint16_t rows = s->line_rows ? s->line_rows : s->h;
+        if (o + 3 > cap) break;
+        p[o++] = 5; p[o++] = (uint8_t)i;
+        size_t fit = (cap - o - 2) / 16u;
+        uint16_t send = rows <= fit ? rows : (uint16_t)fit;
+        ms_wr16(p + o, send); o += 2;
+        memcpy(p + o, s->line_mat, (size_t)send * 16u);
+        o += (size_t)send * 16u;
         n++;
     }
     p[0] = (uint8_t)n;

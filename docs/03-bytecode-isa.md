@@ -18,11 +18,27 @@ SHR, EQ, LT, GT, LE, GE, JMP, JZ, JNZ, CALL, RET, WAIT, HALT, GETBTN, PRESSED,
 TOUCHX, TOUCHY, TOUCHON, RAND, SIN, COS, SETX, SETY, SETVX, SETVY, ADDX, ADDY,
 SETANIM, SETFRAME, SETPRIO, SHEET, HIDE, PLAYSFX, PLAYSONG, STOPSONG, BGSCROLL,
 BGTILE, PALENTRY, FX, SPAWN, DESTROY, SIGNAL, GETSIG, LOADG, STOREG, LOADF,
-STOREF, ENTCOUNT, LOADENT, SETVAR, GETVAR, LOADTIMER, LOADFRAME, SEED`.
+STOREF, ENTCOUNT, LOADENT, SETVAR, GETVAR, LOADTIMER, LOADFRAME, SEED,
+SETMAT, AFFINE, LINETAB`.
 
 Comparisons write `1.0` or `0`. `SIN/COS` take turns (1.0 = 360°). Entity
 fields: 0 x, 1 y, 2 vx, 3 vy, 4 frame, 5 anim, 6 priority, 8 timer.
 Signals are 8 latched bits; `GETSIG` reads one and clears it.
+
+## Matrices
+| Op | Form | Bytes | Effect |
+|---|---|---|---|
+| `SETMAT` | 6, `op, slot, ra, rb, rc, rd` | 6 | `ppu.mat[slot & 15] = {r[a], r[b], r[c], r[d]}` |
+| `AFFINE` | RI | 4 | this entity's object matrix slot (`imm` 0–15, `-1` clears) |
+| `LINETAB` | RI | 4 | this entity's per-scanline table index in the cart's `MATRICES` asset (`-1` clears) |
+
+`SETMAT` writes one of the 16 shared matrices; several entities can share a
+slot, and the write is visible from the next sprite pass. `AFFINE` and
+`LINETAB` are per entity and cheap enough to change every frame — that is how
+an animation bends a sprite line by line without extra OAM entries. Values in
+registers are 16.16; a quarter turn is `0x4000` in `SIN/COS` space but matrix
+rotations should be built with the Studio's `setmat` node, which normalises
+against the sine peak.
 
 ## Semantics
 * On spawn, `start_pc` runs once (`WAIT` delays it across frames).

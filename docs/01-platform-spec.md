@@ -18,8 +18,34 @@ SNES-packed: bits 0–9 tile, 10–12 palette slot, 13 priority, 14 H-flip,
 
 ## 3. Sprites
 128 OAM entries; 8–64 px per axis in steps of 8; 4 bpp (16-colour slots) or
-8 bpp; H/V flip; priority 0 (front)…3 (back); up to 16 shared affine matrices.
-Index 0 of each tile is transparent.
+8 bpp; H/V flip; priority 0 (front)…3 (back). Index 0 of each tile is
+transparent.
+
+### 3.1 Affine matrices
+Sixteen shared matrices of `ms_matrix_t { a, b, c, d }`, 16.16 fixed point. A
+sprite samples through
+
+```
+src = M * (px - w/2, py - h/2) + (w/2, h/2)
+```
+
+so the matrix maps destination offsets back to source offsets about the sprite
+centre and is stationary under translation. Composition is
+`M_total = M_object × M_scanline` — the scanline entry applies first. Flips are
+applied after the matrix, in texture space. Samples outside the sprite box are
+transparent. Arithmetic is integer throughout, and a scanline composes its
+matrix once, not once per pixel.
+
+A sprite selects a slot with `affine` (0–15, or −1 for none). Matrices are
+per frame: a cart writes a slot with `SETMAT` and selects it with `AFFINE`.
+
+### 3.2 Per-scanline matrices
+`line_mat` is a table of `line_rows` entries; scanline `sy = y - o->y` uses
+entry `sy` and identity past the end of the table. One entry is one
+`ms_matrix_t`, so a 240-line warp is 3840 bytes — under a quarter of the link
+MTU. Tables live in the cart as asset kind `MATRICES` (12) and a cart selects
+one with `LINETAB`. Tables may sit at any byte offset; the engine reads them
+with a 16-byte copy, so no alignment is required of the packer.
 
 ## 4. Audio
 32 kHz default (8–48 kHz accepted), 16 voices default (hard cap 64),

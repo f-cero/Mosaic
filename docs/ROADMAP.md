@@ -56,16 +56,16 @@ That gap is what the compat doc still lists:
 - [x] `ms_oam_t.line_mat` + per-scanline composition in `sprite_scanline()`.
 - [x] `mosaic_matrix_test` in ctest — exact palette-index assertions through
       identity, scale and per-scanline shear.
-- [ ] `MSOP_SETMAT` VM opcode (matrix index, a, b, c, d) so a cart can drive
+- [x] `MSOP_SETMAT` VM opcode (matrix index, a, b, c, d) so a cart can drive
       this without C, plus `docs/03-bytecode-isa.md`.
-- [ ] Manifest `matrices` block and cart kind 12 (`MS_A_MATRICES`): 16-byte
+- [x] Manifest `matrices` block and cart kind 12 (`MS_A_MATRICES`): 16-byte
       records, count-prefixed, validated like every other asset.
 - [ ] Studio inspector: matrix widget (rotate/scale/shear sliders, per-line
       table editor for the shear/parallax case).
 - [ ] Port conformance: ESP32 PPU and the register-delta codec carry the matrix
       table (`REG_DELTA` already carries the per-frame matrices; the per-line
       table needs a new sub-record).
-- [ ] Fold §1 semantics into `docs/01-platform-spec.md` once the VM opcode and
+- [x] Fold §1 semantics into `docs/01-platform-spec.md` once the VM opcode and
       the asset kind exist, so the spec states the finished contract once.
 
 ### Acceptance

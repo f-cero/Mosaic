@@ -6,6 +6,7 @@
 #include "mosaic/ms_limits.h"
 #include "mosaic/ms_types.h"
 #include "mosaic/ms_input.h"
+#include "mosaic/ms_render.h"
 
 /* Opcodes — see docs/03-bytecode-isa.md. Forms: RRR (4 bytes),
  * RI (4 bytes: op,dst,i16), RRI? kept out; RRRR (5 bytes). */
@@ -25,6 +26,7 @@ enum {
     MSOP_LOADG, MSOP_STOREG, MSOP_LOADF, MSOP_STOREF,
     MSOP_ENTCOUNT, MSOP_LOADENT, MSOP_SETVAR, MSOP_GETVAR,
     MSOP_LOADTIMER, MSOP_LOADFRAME, MSOP_SEED,
+    MSOP_SETMAT, MSOP_AFFINE, MSOP_LINETAB,
     MSOP_COUNT
 };
 
@@ -53,6 +55,9 @@ typedef struct {
     ms_fix x, y, vx, vy;
     uint16_t sprite, frame, anim, sheet;
     uint8_t  flags, priority, pal;
+    ms_matrix_t mat;          /* object matrix written by SETMAT          */
+    int16_t  affine;          /* shared matrix slot, -1 = none            */
+    int16_t  line_tab;        /* MS_A_MATRICES table index, -1 = none     */
     uint32_t timer, spawn_frame;
     int16_t  def;
     char     name[16];

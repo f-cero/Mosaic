@@ -148,6 +148,30 @@ int ms_check_manifest(const char *text, size_t bytes)
     return text && bytes > 0 && bytes <= 2048;
 }
 
+/* MS_A_MATRICES: u16 tables | u16 0 | tables x u16 rows (pad to 4)
+ *                | sum(rows) x {i32 a, b, c, d}
+ * One table is a per-scanline matrix stack: row i is composed with the
+ * object matrix for scanline i of the sprite that selects it. */
+int ms_check_matrices(const void *data, size_t bytes)
+{
+    const uint8_t *d = (const uint8_t *)data;
+    if (!d || bytes < 4) return 0;
+    const unsigned tables = ms_rd16(d);
+    if (tables == 0 || tables > 64) return 0;
+    if (ms_rd16(d + 2) != 0) return 0;
+    size_t hdr = 4u + (size_t)tables * 2u;
+    hdr = (hdr + 3u) & ~(size_t)3u;
+    if (bytes < hdr) return 0;
+    uint64_t rows = 0;
+    for (unsigned i = 0; i < tables; i++) {
+        const unsigned r = ms_rd16(d + 4u + i * 2u);
+        if (r == 0 || r > 240) return 0;
+        rows += r;
+    }
+    if (rows * 16u != (uint64_t)(bytes - hdr)) return 0;
+    return 1;
+}
+
 int ms_check_anim(const void *data, size_t bytes)
 {
     const uint8_t *p = (const uint8_t *)data;
@@ -192,6 +216,7 @@ static int payload_ok(const uint8_t *d, uint32_t kind, uint32_t size)
     case MS_A_MANIFEST:    return ms_check_manifest((const char *)d, size);
     case MS_A_ANIM:        return ms_check_anim(d, size);
     case MS_A_MVID:        return ms_check_mvid(d, size);
+    case MS_A_MATRICES:    return ms_check_matrices(d, size);
     default:               return 0;
     }
 }

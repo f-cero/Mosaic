@@ -3,6 +3,10 @@
  * an object matrix and a per-scanline table, asserted on exact palette
  * indices rather than on "looks about right". */
 #include "mosaic/ms_render.h"
+#include "mosaic/ms_vm.h"
+#include "mosaic/ms_cart.h"
+#include "mosaic/ms_game.h"
+#include <string.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -46,8 +50,92 @@ static int drawn(void)
     return n;
 }
 
+
+/* ---- VM: SETMAT writes a shared slot, AFFINE/LINETAB select per entity ---- */
+static void vm_matrix_test(void)
+{
+    static const uint8_t code[] = {
+        0x02, 0x01, 0x00,0x00,0x01,0x00,   /* LDI32 r1, 0x00010000 */
+        0x02, 0x02, 0x00,0x00,0xFF,0xFF,   /* LDI32 r2, 0xFFFF0000 */
+        0x02, 0x03, 0x00,0x80,0x00,0x00,   /* LDI32 r3, 0x00008000 */
+        0x02, 0x04, 0x00,0x00,0x00,0x00,   /* LDI32 r4, 0 */
+        MSOP_SETMAT, 2, 1, 2, 3, 4,
+        MSOP_AFFINE, 0, 2, 0,
+        MSOP_LINETAB, 0, 5, 0,
+        MSOP_HALT, 0, 0, 0
+    };
+    uint8_t buf[160];
+    ms_program_t prog;
+    ms_ppu_t ppu;
+    ms_game_t game;
+    ms_vm_t vm;
+    const size_t off = 32 + sizeof code;
+
+    memset(buf, 0, sizeof buf);
+    ms_wr32(buf + 0, MS_PROG_MAGIC);
+    ms_wr32(buf + 4, 1);
+    ms_wr32(buf + 8, (uint32_t)sizeof code);
+    ms_wr32(buf + 12, (uint32_t)off);
+    ms_wr16(buf + 16, 1);
+    ms_wr16(buf + 18, 0xFFFF);          /* no start_pc */
+    ms_wr16(buf + 20, 0);               /* update_pc = 0 */
+    memcpy(buf + 32, code, sizeof code);
+    ms_wr16(buf + off + 0, 0xFFFF);
+    ms_wr16(buf + off + 2, 0);
+
+    CHECK(ms_program_parse(&prog, buf, sizeof buf) == 0, "program parse failed");
+    ms_ppu_reset(&ppu, MS_MODE_RICH, 320, 240);
+    memset(&game, 0, sizeof game);
+    game.ppu = &ppu;
+    CHECK(ms_vm_init(&vm, &prog, &game) == 0, "vm init failed");
+    ms_vm_update(&vm, NULL);
+    CHECK(!vm.error, "vm error: %s", vm.errmsg);
+
+    CHECK(ppu.mat[2].a == MS_FIX_ONE, "SETMAT a = %d", (int)ppu.mat[2].a);
+    CHECK(ppu.mat[2].b == (ms_fix)-MS_FIX_ONE, "SETMAT b = %d", (int)ppu.mat[2].b);
+    CHECK(ppu.mat[2].c == MS_FIX_ONE / 2, "SETMAT c = %d", (int)ppu.mat[2].c);
+    CHECK(ppu.mat[2].d == 0, "SETMAT d = %d", (int)ppu.mat[2].d);
+    CHECK(ppu.mat[0].a == 0, "SETMAT wrote a slot it was not told to");
+    CHECK(vm.ents[0].e.affine == 2, "AFFINE = %d, want 2", vm.ents[0].e.affine);
+    CHECK(vm.ents[0].e.line_tab == 5, "LINETAB = %d, want 5", vm.ents[0].e.line_tab);
+}
+
+/* ---- cart kind 12: validator, writer, mount ---- */
+static void cart_matrices_test(void)
+{
+    static const uint8_t payload[] = {
+        2, 0, 0, 0,           /* two tables */
+        2, 0, 3, 0,           /* rows: 2 + 3 = 5 */
+        /* 5 x {a,b,c,d} — values only have to round-trip */
+        0x00,0x00,0x01,0x00, 0,0,0,0, 0,0,0,0, 0x00,0x00,0x02,0x00,
+        0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+        0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+        0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+        0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0
+    };
+    uint8_t cart[8192];   /* writer needs its 3 KB staging area */
+    ms_cart_writer_t w;
+    ms_cart_t c;
+    ms_asset_t a;
+
+    CHECK(ms_check_matrices(payload, sizeof payload) == 1, "validator rejected a good table set");
+    CHECK(ms_check_matrices(payload, sizeof payload - 1) == 0, "validator took a truncated payload");
+    CHECK(ms_check_matrices(payload, sizeof payload + 1) == 0, "validator took trailing junk");
+
+    ms_cart_writer_begin(&w, cart, sizeof cart);
+    const int arc = ms_cart_add(&w, "warp", MS_A_MATRICES, payload, sizeof payload);
+    CHECK(arc == MS_CART_OK, "writer refused kind 12: %d (%s)", arc, ms_cart_err_str(arc));
+    const int n = ms_cart_finish(&w);
+    CHECK(n > 0, "cart finish failed");
+    CHECK(ms_cart_mount(&c, cart, (size_t)n) == MS_CART_OK, "mount rejected kind 12");
+    CHECK(ms_cart_find_kind(&c, MS_A_MATRICES, &a) == MS_CART_OK, "find_kind 12 failed");
+    CHECK(a.size == sizeof payload, "payload size %u", (unsigned)a.size);
+}
+
 int main(void)
 {
+    vm_matrix_test();
+    cart_matrices_test();
     /* ---- matrix maths ---- */
     ms_matrix_t id = ms_matrix_identity();
     CHECK(id.a == MS_FIX_ONE && id.b == 0 && id.c == 0 && id.d == MS_FIX_ONE,

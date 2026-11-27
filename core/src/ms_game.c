@@ -301,7 +301,22 @@ void ms_game_update(ms_game_t *g, const ms_input_t *in)
         o->pal_slot = 0;
         o->priority = e->priority;
         o->flags = (uint8_t)(e->flags | fr->flags);
-        o->affine = 0xFF;
+        o->affine = (int8_t)(e->affine >= 0 && e->affine < (int)MS_MAX_MATRICES ? e->affine : -1);
+        if (e->line_tab >= 0) {
+            ms_asset_t ma;
+            if (g->cart && ms_cart_find_kind(g->cart, MS_A_MATRICES, &ma) == MS_CART_OK) {
+                const uint8_t *mb = (const uint8_t *)ma.data;
+                const unsigned nt = ms_rd16(mb);
+                if ((unsigned)e->line_tab < nt) {
+                    size_t off = 4u + (size_t)nt * 2u;
+                    off = (off + 3u) & ~(size_t)3u;
+                    for (int k = 0; k < e->line_tab; k++)
+                        off += (size_t)ms_rd16(mb + 4u + (size_t)k * 2u) * 16u;
+                    o->line_mat = (const ms_matrix_t *)(const void *)(mb + off);
+                    o->line_rows = ms_rd16(mb + 4u + (size_t)e->line_tab * 2u);
+                }
+            }
+        }
         o->tiles = sh->tiles + (size_t)fr->tile_base * (sh->bpp == 8 ? 64u : 32u);
     }
     ms_player_t *pl = &g->synth->player;

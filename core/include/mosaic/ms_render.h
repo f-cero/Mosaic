@@ -53,7 +53,8 @@ typedef struct {
     uint8_t  priority;          /* 0 front .. 3 back                     */
     uint8_t  flags;             /* MS_OAM_*                              */
     int8_t   affine;            /* object matrix index, or -1            */
-    const ms_matrix_t *line_mat;/* optional per-scanline table, o->h rows */
+    const ms_matrix_t *line_mat;/* optional per-scanline table, line_rows  */
+    uint16_t line_rows;         /* entries in line_mat; 0 = fill the height */
     const uint8_t *tiles;       /* NULL -> ppu.spr_tiles                 */
 } ms_oam_t;
 

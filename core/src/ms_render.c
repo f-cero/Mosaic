@@ -211,8 +211,15 @@ static void sprite_scanline(const ms_ppu_t *ppu, const ms_oam_t *o, int y,
         has_m = 1;
     }
     if (o->line_mat) {
-        mm = has_m ? ms_matrix_mul(mm, o->line_mat[sy]) : o->line_mat[sy];
-        has_m = 1;
+        const int rows = o->line_rows ? (int)o->line_rows : (int)o->h;
+        if (sy < rows) {
+            /* Cart tables are blobs at an arbitrary offset: read by memcpy so
+             * an unaligned table is still well defined. */
+            ms_matrix_t lm;
+            memcpy(&lm, (const uint8_t *)o->line_mat + (size_t)sy * sizeof(lm), sizeof(lm));
+            mm = has_m ? ms_matrix_mul(mm, lm) : lm;
+            has_m = 1;
+        }
     }
     int x0 = o->x, x1 = o->x + o->w;
     if (x1 <= 0 || x0 >= w) return;
