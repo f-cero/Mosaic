@@ -148,9 +148,16 @@ static void do_build(void)
 {
     project_save();
     char old[512]; if(!MS_GETCWD(old,sizeof(old))) old[0]=0;
+    /* ms_build resolves assets against the project's own directory, but it
+     * opens the project file itself after we chdir there — so pass an
+     * absolute path and a relative .mpj never depends on the cwd. */
+    char full[640];
+    if(g_path[0]=='/') snprintf(full,sizeof(full),"%s",g_path);
+    else if(old[0])    snprintf(full,sizeof(full),"%s/%s",old,g_path);
+    else               snprintf(full,sizeof(full),"%s",g_path);
     if(g_dir[0]) (void)!MS_CHDIR(g_dir);
     static ms_build_result_t r;
-    int rc = ms_build_project(g_path, &r);
+    int rc = ms_build_project(full, &r);
     if(g_dir[0]) (void)!MS_CHDIR(old);
     if(rc!=0){ setlog(r.error,0); return; }
     memcpy(g_cartbuf,r.cart,r.cart_len); g_cartlen=r.cart_len;
