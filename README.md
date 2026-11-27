@@ -20,6 +20,12 @@ boards, a CYD display, a DAC, an SD slot — wired over SPI in any arrangement.
    (VM, logic)             (scanout over SPI)       (I2S / PWM)
 ```
 
+## Audio
+
+Recorded sound can be transcribed into a midicore SMF, in music or
+speech mode: `mosaic audio ingest take.wav -o take.mid --mode music`. See
+[docs/11-audio-ingest.md](docs/11-audio-ingest.md).
+
 ## What is in the box
 
 | Path | What |

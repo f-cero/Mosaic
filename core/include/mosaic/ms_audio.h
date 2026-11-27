@@ -63,6 +63,9 @@ typedef struct {
     uint32_t tick, tick_us, next_us, tempo_us, tpqn;
     uint8_t  running[MS_SONG_TRACKS];
     uint8_t  last_status[MS_SONG_TRACKS];
+    /* monotonic sample clock: ms_synth_render() is called in blocks, so the
+     * sequencer must not compare against block-local frame numbers. */
+    uint64_t audio_pos;
 } ms_player_t;
 
 typedef struct {

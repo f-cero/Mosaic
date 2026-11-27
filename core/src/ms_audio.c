@@ -128,23 +128,29 @@ size_t ms_bank_write(const ms_instrument_t *inst, int count,
 /* note 69 = A4 = 440 Hz; integer semitone ratios in 16.16. */
 static uint32_t note_inc(int note, int rate, int tune)
 {
+    /* ratio[] is Q16 relative to C (ratio[0] == 1.0, ratio[9] == 110218/65536
+     * == C->A). The phase accumulator is 32-bit and the 256-entry wave table is
+     * indexed by its top 8 bits, so one table cycle costs 2^24 phase units:
+     *     inc = f / rate * 2^24
+     * The old code multiplied the C-relative ratio by 440 and never applied the
+     * 2^24 scale, which played every note 1.6818x sharp (A4 came out at 740 Hz).
+     * Kept integer-only, as this file has no float. */
     static const uint32_t ratio[12] = {
         65536, 69433, 73562, 77936, 82570, 87480, 92682, 98193,
         104032, 110218, 116772, 123717
     };
-    int n = note + tune, oct = 0;
-    while (n < 0) { n += 12; oct--; }
-    while (n > 127) { n -= 12; oct++; }
-    int semi = n % 12, o = n / 12 - 5;       /* A4: oct 4 (n 57..68) */
-    uint64_t f_q16 = (uint64_t)ratio[semi] * 440u / 65536u; /* wrong scale */
-    /* ratio is relative to A within octave: A=1, A#=1.059... */
-    f_q16 = (uint64_t)ratio[semi] * (uint64_t)440u * 65536u / 65536u;
-    /* apply octave: each octave doubles from A4 (o=0 at n 57..68) */
-    int shift = o - 0;
-    if (shift > 0) f_q16 <<= shift; else if (shift < 0) f_q16 >>= -shift;
-    (void)oct;
-    uint64_t inc = (f_q16 / (uint64_t)rate) * 256u;
-    return (uint32_t)inc;
+    if (note < 0) note = 0;
+    if (note > 127) note = 127;
+    int n = note + tune;
+    if (n < 0) n = 0;
+    if (n > 127) n = 127;
+    int semi = n % 12;
+    int d = n - 60;                       /* semitones above middle C        */
+    int oct = (d >= 0) ? d / 12 : -((59 - n) / 12 + 1);
+    /* C in Q16 Hz: 261.6256 * 65536 = 17145216 */
+    uint64_t f_q16 = (uint64_t)ratio[semi] * 17145216ull / 65536ull;
+    if (oct > 0) f_q16 <<= oct; else if (oct < 0) f_q16 >>= -oct;
+    return (uint32_t)(f_q16 * 256ull / (uint64_t)(rate > 0 ? rate : 1));
 }
 
 static ms_voice_t *alloc_voice(ms_synth_t *s, int pool)
@@ -350,14 +356,19 @@ void ms_synth_render(ms_synth_t *s, int16_t *out, int frames)
     if (!s || !out || frames <= 0) return;
     memset(out, 0, (size_t)frames * 2 * sizeof(int16_t));
 
+    uint64_t base = s->player.audio_pos;
     for (int f = 0; f < frames; f++) {
         if (s->player.playing) {
-            if (s->player.next_us <= (uint32_t)f * 1000000u / (uint32_t)s->rate) {
-                player_tick(s);
-                s->player.next_us += s->player.tick_us ? s->player.tick_us : 1000u;
+            uint64_t now = (base + (uint64_t)f) * 1000000ull / (uint64_t)s->rate;
+            if ((uint64_t)s->player.next_us <= now) {
+                do {
+                    player_tick(s);
+                    s->player.next_us += s->player.tick_us ? s->player.tick_us : 1000u;
+                } while ((uint64_t)s->player.next_us <= now);
             }
         }
     }
+    s->player.audio_pos = base + (uint64_t)frames;
 
     for (int vi = 0; vi < s->voices; vi++) {
         ms_voice_t *v = &s->v[vi];

@@ -30,7 +30,7 @@ add_custom_command(
   DEPENDS ${CMAKE_SOURCE_DIR}/web/mvid.js ${CMAKE_SOURCE_DIR}/cmake/embed_web.cmake
   COMMENT "Embedding web/mvid.js into the CLI")
 
-add_executable(mosaic tools/main.c tools/video_main.c tools/video_web.c
+add_executable(mosaic tools/main.c tools/video_main.c tools/video_web.c tools/audio_ingest.c
                codec/mvid_encode.c ${CMAKE_BINARY_DIR}/web_mvid_js.h)
 target_include_directories(mosaic PRIVATE third_party ${CMAKE_BINARY_DIR})
 target_link_libraries(mosaic PRIVATE mosaic_core)
@@ -52,6 +52,12 @@ target_link_libraries(mosaic_video_test PRIVATE mosaic_core)
 add_test(NAME mosaic_video_test COMMAND mosaic_video_test)
 
 # The web decoder must render every frame bit-identically to the C decoder.
+find_program(PYTHON3_EXECUTABLE python3)
+if(PYTHON3_EXECUTABLE AND EXISTS ${CMAKE_SOURCE_DIR}/tools/audio_test.py)
+  add_test(NAME mosaic_audio_test
+           COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/audio_test.py --mosaic $<TARGET_FILE:mosaic>)
+endif()
+
 find_program(NODE_EXECUTABLE node)
 if(NODE_EXECUTABLE AND EXISTS ${CMAKE_SOURCE_DIR}/web/mvid.js)
   add_test(NAME mosaic_web_codec_test

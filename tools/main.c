@@ -8,6 +8,7 @@
 #include "stb/stb_image.h"
 
 int mosaic_video_main(int argc, char **argv);
+int mosaic_audio_main(int argc, char **argv);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +28,10 @@ static int usage(void)
            "  video encode --input in.mp4|in.png --out out.mvid [--mode tile4|tile8|qfa4|qfa8] [--fps N]\n"
            "  video compose scene.mvj --out out.mvid\n"
            "  video info clip.mvid\n"
-           "  video frames clip.mvid --out dir\n");
+           "  video frames clip.mvid --out dir\n"
+           "  audio ingest <in.wav> -o out.mid [--mode music|speech] [--program N] [--no-drums]\n"
+           "  audio render <in.mid> -o out.wav [--seconds S] [--rate HZ]\n"
+           "  audio compare <a.wav> <b.wav>   audio dump <in.mid>   audio info <in.wav>\n");
     return 1;
 }
 
@@ -164,5 +168,6 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "convert")) return argc >= 4 ? cmd_convert(argc, argv) : usage();
     if (!strcmp(argv[1], "rom")) return argc >= 3 ? cmd_rom(argc, argv) : usage();
     if (!strcmp(argv[1], "video")) return mosaic_video_main(argc, argv);
+    if (!strcmp(argv[1], "audio")) return mosaic_audio_main(argc, argv);
     return usage();
 }
