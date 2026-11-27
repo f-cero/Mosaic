@@ -72,3 +72,13 @@ This document is about Mosaic's own behaviour. It makes no claim about what
 anyone else's platform permits, and nothing here is legal advice about the
 cartridges *you* own in *your* jurisdiction — Mosaic's position is simply that
 the software will never be the thing standing in your way.
+
+## The server asks for nothing
+
+`mosaic serve` has no account, no login, no session token, no player id and no
+telemetry: a peer says what it can draw, receives registers, and may leave. The
+session's `cart_crc` is an integrity check so two different builds do not try
+to render each other's frames — it is not a permission bit, and a display node
+that fails it is told so rather than silently authenticated. A save lives in the
+image file the operator passes with `--saves`; it belongs to whoever holds that
+file, which is the same rule the handheld follows.

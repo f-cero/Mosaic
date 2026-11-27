@@ -11,7 +11,7 @@ add_library(mosaic_core STATIC
     core/src/ms_input.c core/src/ms_cart.c core/src/ms_vm.c
     core/src/ms_dump.c
     core/src/ms_game.c core/src/ms_core.c core/src/ms_build.c
-    core/src/ms_link.c core/src/ms_device.c core/src/ms_video.c
+    core/src/ms_link.c core/src/ms_net.c core/src/ms_device.c core/src/ms_video.c
     core/src/ms_save.c
     codec/mvid_util.c codec/mvid_decode.c)
 target_include_directories(mosaic_core PUBLIC core/include third_party codec)
@@ -33,9 +33,13 @@ add_custom_command(
   COMMENT "Embedding web/mvid.js into the CLI")
 
 add_executable(mosaic tools/main.c tools/video_main.c tools/video_web.c tools/audio_ingest.c
+               tools/server.c tools/client.c tools/net_io.c
                codec/mvid_encode.c ${CMAKE_BINARY_DIR}/web_mvid_js.h)
-target_include_directories(mosaic PRIVATE third_party ${CMAKE_BINARY_DIR})
+target_include_directories(mosaic PRIVATE third_party ${CMAKE_BINARY_DIR} tools)
 target_link_libraries(mosaic PRIVATE mosaic_core)
+if(WIN32)
+  target_link_libraries(mosaic PRIVATE ws2_32)
+endif()
 
 enable_testing()
 add_executable(mosaic_tests core/tests/test_all.c)
@@ -64,6 +68,17 @@ add_test(NAME mosaic_save_test COMMAND mosaic_save_test)
 add_executable(mosaic_dump_test core/tests/test_dump.c)
 target_link_libraries(mosaic_dump_test PRIVATE mosaic_core)
 add_test(NAME mosaic_dump_test COMMAND mosaic_dump_test)
+
+# MSP/1 loopback: a server and two display nodes on 127.0.0.1 must agree on
+# every frame hash. This is the acceptance test for the dedicated server.
+find_package(Threads REQUIRED)
+add_executable(mosaic_net_test core/tests/test_net.c tools/server.c tools/client.c tools/net_io.c)
+target_include_directories(mosaic_net_test PRIVATE tools)
+target_link_libraries(mosaic_net_test PRIVATE mosaic_core Threads::Threads)
+if(WIN32)
+  target_link_libraries(mosaic_net_test PRIVATE ws2_32)
+endif()
+add_test(NAME mosaic_net_test COMMAND mosaic_net_test ${CMAKE_SOURCE_DIR})
 
 # The web decoder must render every frame bit-identically to the C decoder.
 find_program(PYTHON3_EXECUTABLE python3)

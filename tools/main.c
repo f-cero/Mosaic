@@ -10,6 +10,8 @@
 #include "stb/stb_image.h"
 
 int mosaic_video_main(int argc, char **argv);
+int mosaic_server_main(int argc, char **argv);
+int mosaic_client_main(int argc, char **argv);
 int mosaic_audio_main(int argc, char **argv);
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +30,8 @@ static int usage(void)
            "  convert <in.png> <out.spr2> [--grid 16x16] [--bpp 4]\n"
            "  rom <game.mcart> [-o game.mrom]\n"
            "  dump <game.mcart> [-o dump.msdm] [--saves img.msav] [--verify]\n"
+           "  serve --cart game.mcart [--port 7777] [--saves img.msav] [--frames N]\n"
+           "  play --connect HOST:PORT --cart game.mcart [--frames N]\n"
            "  save init <cart> <img.msav> [--loc console|cart]   format an image\n"
            "  save list <cart> <img.msav>       home, dev, save id, slots\n"
            "  save link <cart> <img.msav>       may this cart read this image?\n"
@@ -441,6 +445,8 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "rom")) return argc >= 3 ? cmd_rom(argc, argv) : usage();
     if (!strcmp(argv[1], "dump")) return cmd_dump(argc, argv);
     if (!strcmp(argv[1], "save")) return cmd_save(argc, argv);
+    if (!strcmp(argv[1], "serve")) return mosaic_server_main(argc, argv);
+    if (!strcmp(argv[1], "play")) return mosaic_client_main(argc, argv);
     if (!strcmp(argv[1], "video")) return mosaic_video_main(argc, argv);
     if (!strcmp(argv[1], "audio")) return mosaic_audio_main(argc, argv);
     return usage();

@@ -96,3 +96,17 @@ mosaic run  game.msdm                                   # plays with the cart ab
 
 Read [FREEDOM.md](FREEDOM.md) for the full statement, including what every check
 in the platform actually protects and how to get past it.
+
+## Two screens, one authority
+
+```
+mosaic serve --cart starfall.mcart --port 7777 --saves player.msav
+mosaic play  --connect 127.0.0.1:7777 --cart starfall.mcart
+```
+
+The server runs the game headlessly; the client is a display node that mounts
+the same cartridge, applies the PPU register stream and renders its own
+scanlines. No pixels are sent — a frame costs ~500 bytes. The loopback test
+(`mosaic_net_test`) starts a server and two clients, runs 300 frames and
+requires their per-frame hashes to equal the server's, frame for frame. See
+[docs/12-server.md](docs/12-server.md).

@@ -8,7 +8,7 @@
 
 void ms_link_init(ms_link_t *l) { if (l) memset(l, 0, sizeof(*l)); }
 
-size_t ms_link_encode(const ms_frame_t *f, void *out, size_t cap)
+size_t ms_link_encode(const ms_link_frame_t *f, void *out, size_t cap)
 {
     size_t need = HDR + (size_t)f->len + 2;
     if (!f || !out || f->len > MS_LINK_MTU || cap < need) return 0;
@@ -22,7 +22,7 @@ size_t ms_link_encode(const ms_frame_t *f, void *out, size_t cap)
     return need;
 }
 
-int ms_link_decode(ms_frame_t *f, const void *in, size_t n)
+int ms_link_decode(ms_link_frame_t *f, const void *in, size_t n)
 {
     const uint8_t *p = (const uint8_t *)in;
     if (!f || !in || n < HDR + 2) return -1;

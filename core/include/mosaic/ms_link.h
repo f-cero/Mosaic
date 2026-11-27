@@ -12,7 +12,10 @@
 
 enum {
     MS_LINK_HELLO = 1, MS_LINK_CAPS, MS_LINK_REG_DELTA, MS_LINK_BAND,
-    MS_LINK_AUDIO, MS_LINK_INPUT, MS_LINK_ACK, MS_LINK_NACK, MS_LINK_PING
+    MS_LINK_AUDIO, MS_LINK_INPUT, MS_LINK_ACK, MS_LINK_NACK, MS_LINK_PING,
+    /* MSP/1 session types — see ms_net.h */
+    MS_LINK_JOIN = 10, MS_LINK_KEYFRAME, MS_LINK_SESSION, MS_LINK_STATE,
+    MS_LINK_SYNC, MS_LINK_BYE
 };
 enum { MS_ROLE_CORE = 1, MS_ROLE_PPU, MS_ROLE_AUDIO, MS_ROLE_IO, MS_ROLE_STORAGE };
 
@@ -21,7 +24,7 @@ typedef struct {
     uint16_t seq;
     uint16_t len;
     uint8_t payload[MS_LINK_MTU];
-} ms_frame_t;
+} ms_link_frame_t;
 
 typedef struct {
     uint32_t frames_tx, frames_rx, bytes_tx, bytes_rx, crc_errors, overruns;
@@ -36,8 +39,8 @@ typedef struct {
 } ms_link_t;
 
 void ms_link_init(ms_link_t *l);
-size_t ms_link_encode(const ms_frame_t *f, void *out, size_t cap);
-int  ms_link_decode(ms_frame_t *f, const void *in, size_t n);
+size_t ms_link_encode(const ms_link_frame_t *f, void *out, size_t cap);
+int  ms_link_decode(ms_link_frame_t *f, const void *in, size_t n);
 void ms_link_note_peer(ms_link_t *l, int node, int role);
 /* Build a register-delta payload for the PPU: scroll, backdrop, palette
  * entries and OAM entries that changed. Returns bytes written. */

@@ -7,7 +7,10 @@ A5 5A | ver | type | node | seq | len LE16 | payload[len] | CRC16-CCITT
 `A5 5A` and drops frames with bad CRC (counted in `crc_errors`).
 
 ## Types
-`HELLO, CAPS, REG_DELTA, BAND, AUDIO, INPUT, ACK, NACK, PING`.
+`HELLO, CAPS, REG_DELTA, BAND, AUDIO, INPUT, ACK, NACK, PING`, plus the MSP/1
+session types `JOIN(10), KEYFRAME(11), SESSION(12), STATE(13), SYNC(14),
+BYE(15)` documented in [12-server.md](12-server.md). The link framing is
+transport-agnostic: the same bytes run over SPI, a pipe or TCP.
 
 ## Bandwidth (the reason for the register model)
 | Stream | Bytes/frame | @60 Hz |
@@ -49,7 +52,17 @@ with a type byte. Type numbers are stable.
 | 5 | line table: `sprite_idx, rows LE16, rows × 16 B` | 3 + 16×rows |
 
 Type 3 carries `affine = 0xFF` for "no matrix" and `line_rows = 0` for "no
-table". Type 4 is emitted for all sixteen slots every frame — 288 bytes, small
+table".
+
+## Session records (MSP/1 additions)
+
+A networked session needs what a wired PPU never did: palettes, background
+configuration, map contents and the sprite count. Those are record types 6–11
+in [12-server.md](12-server.md). Type 3 is unchanged for the wired path; the
+server emits type 10, the same record plus the sprite's sheet index, so a
+display node can resolve tiles from its own cartridge copy. `ms_net_encode_delta`
+is all-or-nothing: it returns 0 rather than clipping a table, and the caller
+answers with a keyframe. Type 4 is emitted for all sixteen slots every frame — 288 bytes, small
 enough that change tracking would cost more than it saves. Type 5 is emitted
 per sprite that has a table, clipped to whatever remains in the 4 KB MTU; a
 table that does not fit must be followed by a keyframe rather than silently

@@ -204,18 +204,22 @@ transport-agnostic byte stream. So the server reuses it verbatim:
 
 ### Breakdown
 
-- [ ] `MS_LINK_JOIN`, `MS_LINK_KEYFRAME`, `MS_LINK_SESSION` frame types;
+- [x] `MS_LINK_JOIN`, `MS_LINK_KEYFRAME`, `MS_LINK_SESSION`, `MS_LINK_STATE`,
+      `MS_LINK_SYNC`, `MS_LINK_BYE` frame types;
       `docs/04-spi-link.md` updated with the wire format.
-- [ ] `tools/server.c`: headless `mosaic serve --cart X --device Y --port 7777`
+- [x] `tools/server.c`: headless `mosaic serve --cart X --device Y --port 7777`
       — no SDL, no window; rings the same `ms_core` frame contract.
-- [ ] `mosaic play --connect host:7777` client that renders received deltas
-      (host SDL window, and the ESP32 port's display task as the real target).
-- [ ] Loopback test in ctest: server + two clients on `127.0.0.1`, 300 frames,
+- [x] `mosaic play --connect host:7777` display node that applies and renders
+      received deltas above `ms_net_client_t` (headless: hashes every frame and
+      can dump a screenshot).
+- [ ] Windowed client: an SDL wrapper over `ms_net_client_t`, and the ESP32
+      display task. Neither has been run on hardware.
+- [x] Loopback test in ctest: server + two clients on `127.0.0.1`, 300 frames,
       assert zero `crc_errors`, equal frame counts, and byte-identical PPU state
       hashes between server and both clients.
-- [ ] Reconnect + keyframe resync test; latency budget documented (delta frame
+- [x] Reconnect + keyframe resync test; latency budget documented (delta frame
       ~420 B → 25 kB/s, so a 300 ms hiccup is still recoverable from a keyframe).
-- [ ] Save/session persistence through §2 so a server restart does not wipe a
+- [x] Save/session persistence through §2 so a server restart does not wipe a
       player's progress.
 
 ### Acceptance
