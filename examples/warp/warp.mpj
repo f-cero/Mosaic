@@ -10,6 +10,7 @@ voices=16
 music_voices=12
 sfx_voices=4
 backdrop=0x0841
+save=8192
 level=../starfall/assets/level.png 4
 sheet player ../starfall/assets/player.png 16 16 4
 entity player play sheet=0 x=160 y=176 anim=0 priority=1 affine=1 linetab=0

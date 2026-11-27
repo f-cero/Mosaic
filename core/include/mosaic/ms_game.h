@@ -63,6 +63,10 @@ void ms_game_sfx(ms_game_t *g, int program, int note);
 void ms_game_music(ms_game_t *g, int slot, int loop);
 const char *ms_game_error(const ms_game_t *g);
 
+/* Bind a save image so SAVE / LOADSAVE opcodes reach it. The image is
+ * caller-owned; pass NULL to detach. Call after ms_game_load. */
+void ms_game_set_save(ms_game_t *g, ms_save_t *save);
+
 /* Sprite sheet decode, shared with tools. */
 int ms_sheet_parse(ms_sheet_t *s, const void *data, size_t bytes);
 

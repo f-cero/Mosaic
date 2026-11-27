@@ -50,3 +50,18 @@ against the sine peak.
 `update`/`start` become handler entry points; exec links become straight-line
 code; `if` emits `JZ`/`JMP` with patched relative offsets; value nodes compile
 to registers 8–15 with expression recursion; `number` emits `LDI32`.
+
+
+## Save opcodes
+
+| op | bytes | operands | effect |
+|---|---|---|---|
+| `SAVE` | 4 | `slot, first_global, globals_n` | Write `globals_n` little-endian int32 globals starting at `first_global` as the slot body, name `"vm"`. |
+| `LOADSAVE` | 4 | `slot, first_global, globals_n` | Read the slot body back into those globals; a short body restores only the globals it covers. |
+
+Both are inert (status `MS_SAVE_E_PARAM`, no VM error) when no image is
+attached, so a cart that uses them still runs on a host without storage. The
+result of the last call is in `ms_vm_t.save_status`; `MS_SAVE_OK` is 0.
+`globals_n` is capped at 64 (256 bytes) per call. The image itself is bound to
+the cart's TOC CRC, so a save from another build is refused rather than
+reinterpreted.

@@ -172,6 +172,22 @@ int ms_check_matrices(const void *data, size_t bytes)
     return 1;
 }
 
+/* MS_A_SAVE: u16 region_bytes | u8 slots | u8 reserved(0).
+ * Declaring the region makes a cart's save capability inspectable before it
+ * runs; a cart without this asset is read-only by construction. */
+int ms_check_save(const void *data, size_t bytes)
+{
+    const uint8_t *p = (const uint8_t *)data;
+    if (!p || bytes != 4) return 0;
+    const unsigned b = ms_rd16(p), slots = p[2];
+    if (b < 512u || b > 65532u) return 0;
+    if (slots < 1u || slots > 8u) return 0;
+    if (p[3] != 0) return 0;
+    /* two copies per slot must each fit a header and a byte of body */
+    if ((b - 14u) / (slots * 2u) < 29u) return 0;
+    return 1;
+}
+
 int ms_check_anim(const void *data, size_t bytes)
 {
     const uint8_t *p = (const uint8_t *)data;
@@ -217,6 +233,7 @@ static int payload_ok(const uint8_t *d, uint32_t kind, uint32_t size)
     case MS_A_ANIM:        return ms_check_anim(d, size);
     case MS_A_MVID:        return ms_check_mvid(d, size);
     case MS_A_MATRICES:    return ms_check_matrices(d, size);
+    case MS_A_SAVE:        return ms_check_save(d, size);
     default:               return 0;
     }
 }
@@ -285,6 +302,7 @@ int ms_cart_mount_budget(ms_cart_t *c, const void *blob, size_t bytes, size_t bu
 
     c->blob = p; c->blob_size = bytes; c->count = count; c->toc_off = toc;
     c->version = MS_CART_VERSION; c->flags = flags; c->budget = (uint32_t)budget;
+    c->crc = ms_rd32(p + 16);
     for (uint32_t i = 0; i < count; i++) {
         const uint8_t *e = p + MS_CART_HDR + (size_t)i * MS_CART_TOC_ENTRY;
         if (ms_rd32(e + 32) == MS_A_MANIFEST)

@@ -130,18 +130,19 @@ SLT1 | u32 seq | u16 len | u16 crc16(body) | u8 name[12] | body[len]
 
 ### Breakdown
 
-- [ ] `core/include/mosaic/ms_save.h` + `core/src/ms_save.c`: open, list, read,
+- [x] `core/include/mosaic/ms_save.h` + `core/src/ms_save.c`: open, list, read,
       write, erase, verify — the whole image in RAM, no I/O.
-- [ ] Cart kind 13 `MS_A_SAVE` declaring the region size, validated against the
+- [x] Cart kind 13 `MS_A_SAVE` declaring the region size, validated against the
       manifest; a cart without it is read-only by construction.
-- [ ] Host: `mosaic save` (list/read/write/dump/import/export) writing a
+- [x] Host: `mosaic save` (list/read/write/dump/import/export) writing a
       `.msav` file — byte-identical to the raw flash region, so a file can be
       moved between host and hardware without conversion.
-- [ ] Export: `.msv` signed bundle (`cart_crc` + `device_id` + slot payloads) so
+- [x] Export: `.msv` checksum-bound bundle (`cart_crc` + `device_id` + slot payloads) so
       a save traded between consoles is checked before it is written.
-- [ ] ESP32: NVS for tiny carts, a flash partition or SD file for the 8 KB
-      image; `ms_save_flush()` contract for power-loss safety.
-- [ ] VM: `MSOP_LOADG/STOREG` already exist for globals; add `MSOP_SAVE` /
+- [ ] ESP32 port wiring: NVS for tiny carts, a flash partition or SD file for
+      the 8 KB image. Core side is done — the image is written in place and a
+      flush is a plain copy of the region, so the port only supplies the bytes.
+- [x] VM: `MSOP_LOADG/STOREG` already exist for globals; add `MSOP_SAVE` /
       `MSOP_LOADSAVE` (slot, offset, len) so a cart can persist without C.
 
 ### Acceptance

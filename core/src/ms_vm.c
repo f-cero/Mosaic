@@ -165,6 +165,30 @@ static int run(ms_vm_t *vm, ms_vm_entity_t *en, int budget)
                 vm->game->ppu->mat[a & 15] = m;
             }
             break;
+        case MSOP_SAVE: {
+            /* op, slot, first_global, globals_n: the body is globals_n
+             * little-endian int32 globals, so a cart can persist without C. */
+            const unsigned slot = a & 15, first = b & 255, n = c & 255;
+            if (!vm->save) { vm->save_status = MS_SAVE_E_PARAM; break; }
+            if (n == 0 || n > 64 || first + n > MS_VM_GLOBALS) { vm->save_status = MS_SAVE_E_PARAM; break; }
+            uint8_t tmp[256];
+            for (unsigned i = 0; i < n; i++) ms_wr32(tmp + i * 4u, vm->globals[first + i]);
+            vm->save_status = ms_save_write(vm->save, slot, "vm", tmp, (size_t)n * 4u);
+            break;
+        }
+        case MSOP_LOADSAVE: {
+            const unsigned slot = a & 15, first = b & 255, n = c & 255;
+            if (!vm->save) { vm->save_status = MS_SAVE_E_PARAM; break; }
+            if (n == 0 || n > 64 || first + n > MS_VM_GLOBALS) { vm->save_status = MS_SAVE_E_PARAM; break; }
+            uint8_t tmp[256]; size_t got = 0;
+            const int rc = ms_save_read(vm->save, slot, NULL, 0, tmp, sizeof tmp, &got, NULL);
+            vm->save_status = rc;
+            if (rc == MS_SAVE_OK) {
+                const unsigned k = (unsigned)(got / 4u);
+                for (unsigned i = 0; i < k && i < n; i++) vm->globals[first + i] = ms_rd32(tmp + i * 4u);
+            }
+            break;
+        }
         case MSOP_AFFINE: en->e.affine = (imm < 0) ? -1 : (int16_t)(imm & 15); break;
         case MSOP_LINETAB: en->e.line_tab = (imm < 0) ? -1 : imm; break;
         case MSOP_SEED: vm->rng = vm->rng ? vm->rng : (uint32_t)imm * 2654435761u; break;

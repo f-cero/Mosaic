@@ -9,6 +9,7 @@
 #include "stb/stb_image_write.h"
 #include "mosaic/ms_build.h"
 #include "mosaic/ms_cart.h"
+#include "mosaic/ms_save.h"
 #include "mosaic/ms_vm.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +33,7 @@ typedef struct { int table; int32_t a, b, c, d; } matrow_t;
 typedef struct {
     char title[33], author[33], mode[12], level[192], music[192], project_dir[192];
     int qfa, voices, mv, sv; unsigned backdrop, level_bpp;
+    unsigned save_bytes; int save_slots;
     sheetdef_t sheets[8]; int nsheets;
     entdef_t ents[16]; int nents;
     matrow_t mats[96]; int nmats;
@@ -91,6 +93,8 @@ static int parse_project(const char *path, project_t *p)
         else if (!strncmp(s, "backdrop=", 9)) p->backdrop = (unsigned)strtoul(s + 9, NULL, 0);
         else if (!strncmp(s, "level=", 6)) sscanf(s + 6, "%191s %u", p->level, &p->level_bpp);
         else if (!strncmp(s, "music=", 6)) sscanf(s + 6, "%191s", p->music);
+        else if (!strncmp(s, "save_slots=", 11)) p->save_slots = atoi(s + 11);
+        else if (!strncmp(s, "save=", 5)) { p->save_bytes = (unsigned)strtoul(s + 5, NULL, 0); if (!p->save_slots) p->save_slots = (int)MS_SAVE_SLOTS; }
         else if (!strncmp(s, "sheet ", 6)) {
             sheetdef_t *sh = &p->sheets[p->nsheets];
             if (p->nsheets >= 8) { fclose(f); return -3; }
@@ -577,6 +581,12 @@ static int add_manifest(ms_cart_writer_t *cw, const project_t *p, int has_pal, i
         if (k < 0) return MS_CART_E_NOSPACE;
         n += k;
     }
+    if (p->save_bytes) {
+        int k = snprintf(text + n, sizeof(text) - (size_t)n, "save=%u\nsave_slots=%d\n",
+                         p->save_bytes, p->save_slots);
+        if (k < 0) return MS_CART_E_NOSPACE;
+        n += k;
+    }
     if (n >= (int)sizeof(text)) return MS_CART_E_NOSPACE;
     return ms_cart_add(cw, "manifest", MS_A_MANIFEST, text, (size_t)n);
 }
@@ -712,6 +722,28 @@ int ms_build_project_opts(const char *path, ms_build_result_t *out, int canonica
 
     /* ---- Mosaic extensions: manifest + compiled program ---- */
     if (!canonical) {
+        /* ---- save region declaration (kind 13) ---- */
+        if (p.save_bytes) {
+            const unsigned sl = p.save_slots > 0 ? (unsigned)p.save_slots : MS_SAVE_SLOTS;
+            uint8_t sv[4];
+            if (p.save_bytes < MS_SAVE_BYTES_MIN || p.save_bytes > MS_SAVE_BYTES_MAX) {
+                snprintf(out->error, sizeof(out->error),
+                         "save=%u is outside %u..%u bytes", p.save_bytes,
+                         MS_SAVE_BYTES_MIN, MS_SAVE_BYTES_MAX);
+                return -7;
+            }
+            if (sl < 1u || sl > MS_SAVE_SLOTS_MAX) {
+                snprintf(out->error, sizeof(out->error), "save_slots=%u is outside 1..%u", sl, MS_SAVE_SLOTS_MAX);
+                return -7;
+            }
+            ms_wr16(sv, (uint16_t)p.save_bytes);
+            sv[2] = (uint8_t)sl; sv[3] = 0;
+            const int rsv = ms_cart_add(&cw, "save", MS_A_SAVE, sv, sizeof sv);
+            if (rsv != MS_CART_OK) {
+                snprintf(out->error, sizeof(out->error), "save region rejected: %s", ms_cart_err_str(rsv));
+                return -7;
+            }
+        }
         int rc = add_manifest(&cw, &p, has_pal, has_splash);
         if (rc != MS_CART_OK) { snprintf(out->error, sizeof(out->error), "manifest: %s", ms_cart_err_str(rc)); return -6; }
 

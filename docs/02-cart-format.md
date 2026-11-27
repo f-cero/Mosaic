@@ -98,3 +98,19 @@ asset names) and, failing that, by asset order.
 
 Readers accept both forms; writers emit v2.1. `manifest` `bg_map_w` /
 `bg_map_h` remain parsed for v2.0 carts and are no longer written.
+
+
+### Kind 13 — `save` (save region declaration)
+
+Mosaic extension (`MS_CART_F_EXT` required), payload 4 bytes:
+
+```
+u16 region_bytes | u8 slots | u8 reserved(0)
+```
+
+`region_bytes` 512..65532, `slots` 1..8, and the stride must leave at least
+29 bytes per copy. Declaring the region here (and mirroring it in the manifest
+as `save=` / `save_slots=`) makes a cart's save capability inspectable before
+it runs: `mosaic save init` sizes the image from this asset, and a cart without
+it cannot be written to at all. The image bytes themselves live outside the
+cart (SRAM, a flash partition, a host file) — the cart only declares the shape.

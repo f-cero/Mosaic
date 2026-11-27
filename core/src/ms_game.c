@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+void ms_game_set_save(ms_game_t *g, ms_save_t *save)
+{
+    if (g) g->vm.save = save;
+}
+
 const char *ms_game_error(const ms_game_t *g) { return g ? g->error : "no game"; }
 
 int ms_sheet_parse(ms_sheet_t *s, const void *data, size_t bytes)

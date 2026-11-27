@@ -9,7 +9,7 @@
  *                 | u32 payload_size | u32 crc32(payload)
  *   payloads follow the TOC, in TOC order.
  *
- * Kinds 1..7 are canonical. Kinds 8..12 are Mosaic extensions and are
+ * Kinds 1..7 are canonical. Kinds 8..13 are Mosaic extensions and are
  * only accepted when flags bit 0 (MS_CART_F_EXT) is set — a strict
  * cart16 v2 reader (the reference one) rejects them by design.
  */
@@ -31,11 +31,12 @@ typedef enum {
     MS_A_MANIFEST = 9,   /* key=value text                              */
     MS_A_ANIM     = 10,  /* u16 count | 8-byte animation records        */
     MS_A_MVID     = 11,  /* MVID v1 tile video (codec/mvid.h)           */
-    MS_A_MATRICES = 12   /* per-scanline matrix tables                  */
+    MS_A_MATRICES = 12,  /* per-scanline matrix tables                  */
+    MS_A_SAVE     = 13   /* save region declaration: u16 bytes|u8 slots|u8 0 */
 } ms_asset_kind_t;
 
 #define MS_CART_KIND_CANON_MAX 7u
-#define MS_CART_KIND_MAX      12u
+#define MS_CART_KIND_MAX      13u
 
 #define MS_CART_MAGIC     0x31365452u   /* 'RT16' little-endian */
 #define MS_CART_VERSION   2u
@@ -73,6 +74,8 @@ typedef struct {
     uint16_t version;
     uint16_t flags;
     uint32_t budget;
+    uint32_t crc;                /* TOC crc32 from the header — the cart's
+                                  * identity for the save-image binding     */
     char     title[33];          /* from the manifest asset, "" if none */
 } ms_cart_t;
 
@@ -98,6 +101,7 @@ int ms_check_manifest(const char *text, size_t bytes);
 int ms_check_anim(const void *data, size_t bytes);
 int ms_check_mvid(const void *data, size_t bytes);   /* implemented in ms_video.c */
 int ms_check_matrices(const void *data, size_t bytes);
+int ms_check_save(const void *data, size_t bytes);
 
 /* Largest power-of-two divisor split of a power-of-two entry count,
  * orientated landscape (used when the cart carries no map-dimension hint). */

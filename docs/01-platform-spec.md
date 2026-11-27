@@ -81,3 +81,41 @@ given input sequence (VM RNG is seeded and frame-counted).
 is allowed to run. `mosaic build` runs the same validators; the Studio's Build
 button calls the same function, so what the editor exports is what the console
 accepts.
+
+
+## Save image (v1.1)
+
+One byte image is the whole save format: a battery-backed SRAM region, a flash
+partition, a `.msav` host file and an AI Drive object are the same bytes, read
+and written in place through a caller-owned buffer. No heap, no I/O, no floats.
+All little-endian:
+
+```
+MOS1 | u16 ver=1 | u16 bytes | u8 slots | u8 reserved | u32 cart_crc
+copy[slot*2 + which]  for every slot, both copies, at a fixed stride of
+                      (bytes - 14) / (slots * 2)
+```
+
+```
+SLT1 | u32 seq | u16 len | u16 crc16(body) | u8 name[12]
+     | u16 hcrc (crc16 of the first 24 bytes) | u16 0 | body[len]
+```
+
+Normative rules:
+
+- A write goes to the copy with the **older `seq`**, and commits by writing
+  `hcrc` **last**. A power cut at any point therefore leaves the other copy
+  authoritative; a record whose `hcrc` or `body` CRC fails is never used.
+- The live copy is the valid copy with the highest `seq`. When the newest copy
+  fails its checks the older one is used and the reader reports
+  `MS_SAVE_F_FELLBACK | MS_SAVE_F_TORN` — a fallback is never silent.
+- `cart_crc` is the cart's TOC CRC32. Opening an image written by another build
+  is `MS_SAVE_E_CART`, not an empty save. The image is bound to exactly one
+  build on purpose: a struct-shaped save that silently reinterprets after an
+  edit is worse than a refused load.
+- `len == 0` with an empty name is a tombstone: an erased slot, and it is
+  written through the same A/B path so an erase is as power-safe as a write.
+- `h` bodies are capped by the region: `max_body = stride - 28`. A caller that
+  needs more must ask for a bigger region in the cart, not shrink the body.
+- A cart declares the region with asset kind 13 (§02). A cart without that
+  asset is **read-only by construction**.

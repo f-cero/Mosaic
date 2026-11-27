@@ -11,6 +11,7 @@ add_library(mosaic_core STATIC
     core/src/ms_input.c core/src/ms_cart.c core/src/ms_vm.c
     core/src/ms_game.c core/src/ms_core.c core/src/ms_build.c
     core/src/ms_link.c core/src/ms_device.c core/src/ms_video.c
+    core/src/ms_save.c
     codec/mvid_util.c codec/mvid_decode.c)
 target_include_directories(mosaic_core PUBLIC core/include third_party codec)
 target_compile_options(mosaic_core PRIVATE -Wall -Wextra)
@@ -54,6 +55,11 @@ add_test(NAME mosaic_video_test COMMAND mosaic_video_test)
 add_executable(mosaic_matrix_test core/tests/test_matrix.c)
 target_link_libraries(mosaic_matrix_test PRIVATE mosaic_core)
 add_test(NAME mosaic_matrix_test COMMAND mosaic_matrix_test)
+
+# Save image: A/B fallback, torn writes, cart binding, bundle, SAVE opcodes
+add_executable(mosaic_save_test core/tests/test_save.c)
+target_link_libraries(mosaic_save_test PRIVATE mosaic_core)
+add_test(NAME mosaic_save_test COMMAND mosaic_save_test)
 
 # The web decoder must render every frame bit-identically to the C decoder.
 find_program(PYTHON3_EXECUTABLE python3)

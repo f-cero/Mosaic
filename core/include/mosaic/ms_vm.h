@@ -7,6 +7,7 @@
 #include "mosaic/ms_types.h"
 #include "mosaic/ms_input.h"
 #include "mosaic/ms_render.h"
+#include "mosaic/ms_save.h"
 
 /* Opcodes — see docs/03-bytecode-isa.md. Forms: RRR (4 bytes),
  * RI (4 bytes: op,dst,i16), RRI? kept out; RRRR (5 bytes). */
@@ -27,6 +28,7 @@ enum {
     MSOP_ENTCOUNT, MSOP_LOADENT, MSOP_SETVAR, MSOP_GETVAR,
     MSOP_LOADTIMER, MSOP_LOADFRAME, MSOP_SEED,
     MSOP_SETMAT, MSOP_AFFINE, MSOP_LINETAB,
+    MSOP_SAVE, MSOP_LOADSAVE,      /* op, slot, first_global, globals_n */
     MSOP_COUNT
 };
 
@@ -87,6 +89,8 @@ typedef struct {
     uint8_t  signal[8];
     uint32_t globals[MS_VM_GLOBALS];
     const ms_input_t *input;
+    ms_save_t *save;         /* optional: attached with ms_game_set_save  */
+    int      save_status;    /* last ms_save_* result, MS_SAVE_OK == 0   */
     int      error;
     char     errmsg[64];
     ms_game_t *game;
