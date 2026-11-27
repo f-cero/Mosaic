@@ -7,10 +7,11 @@
 #include "mosaic/ms_render.h"
 #include "mosaic/ms_audio.h"
 #include "mosaic/ms_vm.h"
+#include "mosaic/ms_video.h"
 
 typedef struct {
     char title[33], author[33], boot_song[32], start_map[32];
-    char palette_bg[32], palette_spr[32];
+    char palette_bg[32], palette_spr[32], splash[32];
     int  map_w, map_h;
     uint8_t mode, qfa, voices, music_voices, sfx_voices, brightness;
     uint16_t backdrop;
@@ -48,6 +49,8 @@ typedef struct ms_game {
     const uint8_t *anim_blob;
     int song_slot;
     uint32_t frame;
+    ms_video_t vid;
+    uint8_t splash_on, splash_bg0;
     char error[96];
 } ms_game_t;
 

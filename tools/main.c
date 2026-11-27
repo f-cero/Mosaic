@@ -5,6 +5,9 @@
 #include "mosaic/ms_core.h"
 #include "mosaic/ms_game.h"
 #include "mosaic/ms_input.h"
+#include "stb/stb_image.h"
+
+int mosaic_video_main(int argc, char **argv);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,7 +23,11 @@ static int usage(void)
            "  run <game.mcart> [--frames N] [--left] [--right] [--jump] [--screenshot out.png]\n"
            "  inspect <game.mcart>\n"
            "  convert <in.png> <out.spr2> [--grid 16x16] [--bpp 4]\n"
-           "  rom <game.mcart> [-o game.mrom]\n");
+           "  rom <game.mcart> [-o game.mrom]\n"
+           "  video encode --input in.mp4|in.png --out out.mvid [--mode tile4|tile8|qfa4|qfa8] [--fps N]\n"
+           "  video compose scene.mvj --out out.mvid\n"
+           "  video info clip.mvid\n"
+           "  video frames clip.mvid --out dir\n");
     return 1;
 }
 
@@ -156,5 +163,6 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "run")) return argc >= 3 ? cmd_run(argc, argv) : usage();
     if (!strcmp(argv[1], "convert")) return argc >= 4 ? cmd_convert(argc, argv) : usage();
     if (!strcmp(argv[1], "rom")) return argc >= 3 ? cmd_rom(argc, argv) : usage();
+    if (!strcmp(argv[1], "video")) return mosaic_video_main(argc, argv);
     return usage();
 }

@@ -19,6 +19,7 @@ typedef struct {
     size_t cart_len;
     char   error[MS_BUILD_MAX_ERR];
     int    sheets, tiles, maps, songs, programs;
+    size_t splash_bytes;
 } ms_build_result_t;
 
 /* Build a cart from a .mpj project file. Returns 0 on success.

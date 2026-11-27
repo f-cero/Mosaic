@@ -10,8 +10,9 @@ add_library(mosaic_core STATIC
     core/src/ms_util.c core/src/ms_render.c core/src/ms_audio.c
     core/src/ms_input.c core/src/ms_cart.c core/src/ms_vm.c
     core/src/ms_game.c core/src/ms_core.c core/src/ms_build.c
-    core/src/ms_link.c core/src/ms_device.c)
-target_include_directories(mosaic_core PUBLIC core/include third_party)
+    core/src/ms_link.c core/src/ms_device.c core/src/ms_video.c
+    codec/mvid_util.c codec/mvid_decode.c)
+target_include_directories(mosaic_core PUBLIC core/include third_party codec)
 target_compile_options(mosaic_core PRIVATE -Wall -Wextra)
 if(NOT WIN32)
   target_link_libraries(mosaic_core PUBLIC m)
@@ -20,7 +21,8 @@ if(NOT MSVC)
   target_compile_options(mosaic_core PRIVATE -Wno-unused-parameter)
 endif()
 
-add_executable(mosaic tools/main.c)
+add_executable(mosaic tools/main.c tools/video_main.c codec/mvid_encode.c)
+target_include_directories(mosaic PRIVATE third_party)
 target_link_libraries(mosaic PRIVATE mosaic_core)
 
 enable_testing()
@@ -32,6 +34,12 @@ add_test(NAME mosaic_tests COMMAND mosaic_tests)
 add_executable(mosaic_conformance core/tests/test_conformance.c)
 target_link_libraries(mosaic_conformance PRIVATE mosaic_core)
 add_test(NAME mosaic_conformance COMMAND mosaic_conformance)
+
+# MVID codec: lossless roundtrip, pan frames, cart packaging
+add_executable(mosaic_video_test core/tests/test_video.c codec/mvid_encode.c)
+target_include_directories(mosaic_video_test PRIVATE third_party codec)
+target_link_libraries(mosaic_video_test PRIVATE mosaic_core)
+add_test(NAME mosaic_video_test COMMAND mosaic_video_test)
 
 # Studio (SDL2 GUI) — see studio/README.md
 # SDL2 can come from a config package (Linux/SDL2_DIR) or from an explicit
@@ -52,6 +60,10 @@ else()
 endif()
 
 if(MOSAIC_HAVE_SDL2)
+  add_executable(mvidplay tools/mvidplay/main.c codec/mvid_util.c codec/mvid_decode.c)
+  target_include_directories(mvidplay PRIVATE codec ${SDL2_INCLUDE_DIRS})
+  target_link_libraries(mvidplay PRIVATE ${SDL2_LIBRARIES})
+
   add_executable(mosaic-studio studio/main.c)
   target_include_directories(mosaic-studio PRIVATE ${SDL2_INCLUDE_DIRS} studio third_party/font)
   target_link_libraries(mosaic-studio PRIVATE mosaic_core ${SDL2_LIBRARIES})

@@ -191,6 +191,7 @@ static int payload_ok(const uint8_t *d, uint32_t kind, uint32_t size)
     case MS_A_PROGRAM:     return ms_check_program(d, size);
     case MS_A_MANIFEST:    return ms_check_manifest((const char *)d, size);
     case MS_A_ANIM:        return ms_check_anim(d, size);
+    case MS_A_MVID:        return ms_check_mvid(d, size);
     default:               return 0;
     }
 }

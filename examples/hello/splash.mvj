@@ -1,0 +1,6 @@
+video fps=12 loop=0 bpp=4
+shot pan image=assets/title.png frames=18 x=0 y=0 tox=28 toy=0 brightness=0 tobri=16
+shot pan image=assets/title.png frames=10 x=28 y=0 tox=48 toy=0 brightness=16
+shot pan image=assets/title.png frames=10 x=48 y=0 tox=48 toy=0 brightness=16 tobri=0
+shot affine image=assets/level.png frames=22 zoom=1.0->1.25 rot=0 brightness=0 tobri=16
+shot affine image=assets/level.png frames=10 zoom=1.25->1.42 rot=0 brightness=16 tobri=0

@@ -86,6 +86,7 @@ int ms_manifest_parse(ms_manifest_t *m, const char *text, size_t bytes)
     if (key_val(text, "palette_spr", tmp, sizeof(tmp)) == 0) snprintf(m->palette_spr, sizeof(m->palette_spr), "%s", tmp);
     if (key_val(text, "bg_map_w", tmp, sizeof(tmp)) == 0) m->map_w = atoi(tmp);
     if (key_val(text, "bg_map_h", tmp, sizeof(tmp)) == 0) m->map_h = atoi(tmp);
+    if (key_val(text, "splash", tmp, sizeof(tmp)) == 0) snprintf(m->splash, sizeof(m->splash), "%s", tmp);
     if (!m->voices || m->voices > MS_VOICES_MAX) return -1;
     if ((unsigned)m->music_voices + m->sfx_voices > m->voices) return -1;
     return 0;
@@ -227,6 +228,19 @@ int ms_game_load(ms_game_t *g, const ms_cart_t *cart, ms_ppu_t *ppu, ms_synth_t 
         snprintf(g->error, sizeof(g->error), "cart has no program asset");
         return -3;
     }
+    /* optional intro movie (cart kind 11) */
+    ms_asset_t clip;
+    int have_clip = 0;
+    if (g->man.splash[0] && ms_cart_find(cart, g->man.splash, &clip) == 0 && clip.kind == MS_A_MVID)
+        have_clip = 1;
+    else if (ms_cart_find_kind(cart, MS_A_MVID, &clip) == 0)
+        have_clip = 1;
+    if (have_clip && ms_video_open(&g->vid, clip.data, clip.size) == 0) {
+        g->splash_on = 1;
+        g->splash_bg0 = ppu->bg[0].enabled;
+        ppu->bg[0].enabled = 0;
+        ms_video_bind(&g->vid, ppu, 1);
+    }
     if (g->man.boot_song[0]) ms_game_music(g, 0, 1);
     return 0;
 }
@@ -237,6 +251,24 @@ void ms_game_update(ms_game_t *g, const ms_input_t *in)
 {
     if (!g) return;
     g->frame++;
+    if (g->splash_on) {
+        const unsigned fps = g->vid.dec.info.fps ? g->vid.dec.info.fps : 12u;
+        while ((uint32_t)((uint64_t)g->frame * fps / 60u) > g->vid.dec.cur && g->vid.playing) {
+            if (!ms_video_advance(&g->vid)) break;
+        }
+        const int skip = in && (in->pressed & (MS_BTN_A | MS_BTN_START));
+        if (skip || ms_video_done(&g->vid)) {
+            ms_video_stop(&g->vid);
+            g->splash_on = 0;
+            g->ppu->bg[1].enabled = 0;
+            g->ppu->bg[0].enabled = g->splash_bg0;
+            g->ppu->fx.brightness = g->man.brightness ? g->man.brightness : 16;
+        } else {
+            ms_video_bind(&g->vid, g->ppu, 1);
+            g->ppu->oam_count = 0;
+            return;
+        }
+    }
     ms_vm_update(&g->vm, in);
     ms_ppu_t *ppu = g->ppu;
     ppu->oam_count = 0;

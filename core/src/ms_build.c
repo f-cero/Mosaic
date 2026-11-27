@@ -501,7 +501,30 @@ int ms_write_png(const char *path, int w, int h, const unsigned short *rgb565)
 /* ---------------- build ---------------- */
 /* ---------------- build ---------------- */
 
-static int add_manifest(ms_cart_writer_t *cw, const project_t *p, int has_pal)
+static uint8_t *slurp_file(const char *path, size_t *n)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
+    long sz = ftell(f);
+    if (sz <= 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return NULL; }
+    uint8_t *b = (uint8_t *)malloc((size_t)sz);
+    if (!b) { fclose(f); return NULL; }
+    if (fread(b, 1, (size_t)sz, f) != (size_t)sz) { free(b); fclose(f); return NULL; }
+    fclose(f);
+    *n = (size_t)sz;
+    return b;
+}
+
+static int mosaic_file_exists(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
+static int add_manifest(ms_cart_writer_t *cw, const project_t *p, int has_pal, int has_splash)
 {
     char text[1024];
     int n = snprintf(text, sizeof(text),
@@ -517,6 +540,11 @@ static int add_manifest(ms_cart_writer_t *cw, const project_t *p, int has_pal)
     }
     if (p->music[0]) {
         int k = snprintf(text + n, sizeof(text) - (size_t)n, "music=music\n");
+        if (k < 0) return MS_CART_E_NOSPACE;
+        n += k;
+    }
+    if (has_splash) {
+        int k = snprintf(text + n, sizeof(text) - (size_t)n, "splash=splash\n");
         if (k < 0) return MS_CART_E_NOSPACE;
         n += k;
     }
@@ -634,9 +662,28 @@ int ms_build_project_opts(const char *path, ms_build_result_t *out, int canonica
         }
     }
 
+    /* ---- optional intro movie: <dir>/splash.mvid or <dir>/assets/splash.mvid ---- */
+    int has_splash = 0;
+    {
+        char sp[256];
+        snprintf(sp, sizeof(sp), "%s/splash.mvid", p.project_dir);
+        if (!mosaic_file_exists(sp))
+            snprintf(sp, sizeof(sp), "%s/assets/splash.mvid", p.project_dir);
+        if (mosaic_file_exists(sp)) {
+            size_t sn = 0;
+            uint8_t *sb = slurp_file(sp, &sn);
+            if (sb && sn && sn < MS_CART_BYTES_MAX &&
+                ms_cart_add(&cw, "splash", MS_A_MVID, sb, sn) == MS_CART_OK) {
+                has_splash = 1;
+                out->splash_bytes = sn;
+            }
+            free(sb);
+        }
+    }
+
     /* ---- Mosaic extensions: manifest + compiled program ---- */
     if (!canonical) {
-        int rc = add_manifest(&cw, &p, has_pal);
+        int rc = add_manifest(&cw, &p, has_pal, has_splash);
         if (rc != MS_CART_OK) { snprintf(out->error, sizeof(out->error), "manifest: %s", ms_cart_err_str(rc)); return -6; }
 
         static uint8_t code[MS_PROGRAM_MAX];
