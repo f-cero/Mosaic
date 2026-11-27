@@ -1,0 +1,23 @@
+# Starfall II — reads Starfall's save and keeps its own.
+# Same developer key, a different save_id, and one explicit grant:
+# save_reads=starfall opens the predecessor's save read-only.
+title=Starfall II
+author=Mosaic Labs
+mode=rich
+qfa=0
+voices=16
+music_voices=12
+sfx_voices=4
+backdrop=0x0841
+save=8192
+save_loc=both
+dev=cero-labs
+dev_key=mosaic-demo-key
+save_id=starfall2
+save_reads=starfall
+level=../starfall/assets/level.png 4
+sheet player ../starfall/assets/player.png 16 16 4
+entity player play sheet=0 x=160 y=176 anim=0 priority=1
+node 1 update 40 40
+node 2 wait 220 40 frames=1
+link 1.next 2.in

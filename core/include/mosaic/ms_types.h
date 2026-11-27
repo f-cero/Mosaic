@@ -27,6 +27,20 @@ unsigned ms_rgb565_r(uint16_t c);
 unsigned ms_rgb565_g(uint16_t c);
 unsigned ms_rgb565_b(uint16_t c);
 
+/* SipHash-2-4 as a keyed integrity tag for save records. It is a MAC, not a
+ * cipher: the key travels in the cart, so it stops accidents, cross-project
+ * collisions and casual editing — not a determined player. */
+typedef struct { uint64_t v0, v1, v2, v3; uint8_t buf[8]; uint8_t n; uint64_t total; } ms_sip_t;
+void ms_sip_init(ms_sip_t *c, const uint8_t key[16]);
+void ms_sip_update(ms_sip_t *c, const void *data, size_t n);
+uint64_t ms_sip_final(ms_sip_t *c);
+uint64_t ms_mac64(const uint8_t key[16], const void *data, size_t n);
+/* Developer key string -> 16-byte MAC key. Empty/NULL gives the zero key. */
+void ms_mac_key(const char *dev_key, uint8_t key[16]);
+/* Developer / save identifiers: 32-bit, stable across builds, computed from
+ * the strings a project declares (`dev=` / `save_id=`). 0 means "unset". */
+uint32_t ms_id32(const char *name);
+
 uint32_t ms_crc32(const void *data, size_t n);
 uint32_t ms_hash32(const char *s);
 uint16_t ms_crc16(const void *data, size_t n);

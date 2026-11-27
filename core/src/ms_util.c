@@ -74,6 +74,98 @@ uint16_t ms_rgb565_mix(uint16_t a, uint16_t b, unsigned t)
     return (uint16_t)((r << 11) | (g << 5) | bl);
 }
 
+/* ---------------- SipHash-2-4 ---------------- */
+
+#define SIP_ROTL(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
+#define SIP_ROUND(v0, v1, v2, v3)                       \
+    do {                                                \
+        v0 += v1; v1 = SIP_ROTL(v1, 13); v1 ^= v0; v0 = SIP_ROTL(v0, 32); \
+        v2 += v3; v3 = SIP_ROTL(v3, 16); v3 ^= v2;      \
+        v0 += v3; v3 = SIP_ROTL(v3, 21); v3 ^= v0;      \
+        v2 += v1; v1 = SIP_ROTL(v1, 17); v1 ^= v2; v2 = SIP_ROTL(v2, 32); \
+    } while (0)
+
+static uint64_t sip_rd64le(const uint8_t *p)
+{
+    return (uint64_t)p[0] | ((uint64_t)p[1] << 8) | ((uint64_t)p[2] << 16) |
+           ((uint64_t)p[3] << 24) | ((uint64_t)p[4] << 32) | ((uint64_t)p[5] << 40) |
+           ((uint64_t)p[6] << 48) | ((uint64_t)p[7] << 56);
+}
+
+void ms_sip_init(ms_sip_t *c, const uint8_t key[16])
+{
+    const uint64_t k0 = sip_rd64le(key), k1 = sip_rd64le(key + 8);
+    c->v0 = k0 ^ 0x736f6d6570736575ull;
+    c->v1 = k1 ^ 0x646f72616e646f6dull;
+    c->v2 = k0 ^ 0x6c7967656e657261ull;
+    c->v3 = k1 ^ 0x7465646279746573ull;
+    c->n = 0; c->total = 0;
+}
+
+static void sip_compress(ms_sip_t *c, const uint8_t *m)
+{
+    const uint64_t w = sip_rd64le(m);
+    c->v3 ^= w; SIP_ROUND(c->v0, c->v1, c->v2, c->v3);
+    SIP_ROUND(c->v0, c->v1, c->v2, c->v3);
+    c->v0 ^= w;
+}
+
+void ms_sip_update(ms_sip_t *c, const void *data, size_t n)
+{
+    const uint8_t *p = (const uint8_t *)data;
+    c->total += n;
+    while (n) {
+        if (c->n == 0 && n >= 8) { sip_compress(c, p); p += 8; n -= 8; continue; }
+        c->buf[c->n++] = *p++; n--;
+        if (c->n == 8) { sip_compress(c, c->buf); c->n = 0; }
+    }
+}
+
+uint64_t ms_sip_final(ms_sip_t *c)
+{
+    uint8_t tail[8];
+    memset(tail, 0, sizeof tail);
+    tail[7] = (uint8_t)(c->total & 0xFF);
+    for (uint8_t i = 0; i < c->n; i++) tail[i] = c->buf[i];
+    sip_compress(c, tail);
+    c->v2 ^= 0xFF;
+    SIP_ROUND(c->v0, c->v1, c->v2, c->v3);
+    SIP_ROUND(c->v0, c->v1, c->v2, c->v3);
+    SIP_ROUND(c->v0, c->v1, c->v2, c->v3);
+    SIP_ROUND(c->v0, c->v1, c->v2, c->v3);
+    return c->v0 ^ c->v1 ^ c->v2 ^ c->v3;
+}
+
+uint64_t ms_mac64(const uint8_t key[16], const void *data, size_t n)
+{
+    ms_sip_t c;
+    ms_sip_init(&c, key);
+    ms_sip_update(&c, data, n);
+    return ms_sip_final(&c);
+}
+
+/* splitmix64 over a 64-bit FNV-1a of the string: a KDF-shaped expansion, not
+ * a password hash. The input is a project identifier, not a user secret. */
+void ms_mac_key(const char *dev_key, uint8_t key[16])
+{
+    uint64_t h = 1469598103934665603ull;
+    if (dev_key) for (const char *p = dev_key; *p; p++) { h ^= (uint8_t)*p; h *= 1099511628211ull; }
+    for (int i = 0; i < 2; i++) {
+        h += 0x9E3779B97F4A7C15ull;
+        uint64_t z = h;
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+        z ^= z >> 31;
+        for (int b = 0; b < 8; b++) key[i * 8 + b] = (uint8_t)(z >> (b * 8));
+    }
+}
+
+uint32_t ms_id32(const char *name)
+{
+    if (!name || !*name) return 0;
+    return ms_hash32(name) ? ms_hash32(name) : 1u;   /* 0 is reserved for "unset" */
+}
+
 uint32_t ms_crc32(const void *data, size_t n)
 {
     static uint32_t tab[256];

@@ -168,20 +168,22 @@ static int run(ms_vm_t *vm, ms_vm_entity_t *en, int budget)
         case MSOP_SAVE: {
             /* op, slot, first_global, globals_n: the body is globals_n
              * little-endian int32 globals, so a cart can persist without C. */
-            const unsigned slot = a & 15, first = b & 255, n = c & 255;
-            if (!vm->save) { vm->save_status = MS_SAVE_E_PARAM; break; }
+            const unsigned slot = a & 0x0F, first = b & 255, n = c & 255;
+            const unsigned loc = (a & 0x80) ? MS_SAVE_LOC_CART : MS_SAVE_LOC_CONSOLE;
+            if (!vm->saves) { vm->save_status = MS_SAVE_E_PARAM; break; }
             if (n == 0 || n > 64 || first + n > MS_VM_GLOBALS) { vm->save_status = MS_SAVE_E_PARAM; break; }
             uint8_t tmp[256];
             for (unsigned i = 0; i < n; i++) ms_wr32(tmp + i * 4u, vm->globals[first + i]);
-            vm->save_status = ms_save_write(vm->save, slot, "vm", tmp, (size_t)n * 4u);
+            vm->save_status = ms_save_store_write(vm->saves, loc, slot, "vm", 0, tmp, (size_t)n * 4u);
             break;
         }
         case MSOP_LOADSAVE: {
-            const unsigned slot = a & 15, first = b & 255, n = c & 255;
-            if (!vm->save) { vm->save_status = MS_SAVE_E_PARAM; break; }
+            const unsigned slot = a & 0x0F, first = b & 255, n = c & 255;
+            if (!vm->saves) { vm->save_status = MS_SAVE_E_PARAM; break; }
             if (n == 0 || n > 64 || first + n > MS_VM_GLOBALS) { vm->save_status = MS_SAVE_E_PARAM; break; }
-            uint8_t tmp[256]; size_t got = 0;
-            const int rc = ms_save_read(vm->save, slot, NULL, 0, tmp, sizeof tmp, &got, NULL);
+            uint8_t tmp[256]; size_t got = 0; uint16_t fmt = 0;
+            const int rc = ms_save_store_read(vm->saves, slot, NULL, 0, tmp, sizeof tmp,
+                                              &got, &fmt, NULL, NULL);
             vm->save_status = rc;
             if (rc == MS_SAVE_OK) {
                 const unsigned k = (unsigned)(got / 4u);

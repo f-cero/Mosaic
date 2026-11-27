@@ -50,12 +50,21 @@ rows accumulate in file order and tables must be contiguous from 0. They
 compile to cart kind 12, and an entity selects them with
 `affine=<slot> linetab=<table>` on its own line:
 ```
+save=8192                      # declare an 8 KB console+cartridge save region
+save_loc=both                  # console | cart | both
+dev=cero-labs                  # developer key: namespaces the studio
+dev_key=mosaic-demo-key        # keys the record MAC (defaults to dev=)
+save_id=starfall               # names the save, not the title
+save_reads=starfall            # read-only grant to another save id
 mat set=0 a=1.00 b=0.22 c=0.00 d=1.00     # scanline 0 of table 0
 entity player play sheet=0 x=160 y=176 affine=1 linetab=0
 node 2 setmat 40 110 slot=1 a=1.00 b=0.35 c=0.00 d=1.00
 ```
-`examples/warp/` is the reference: a 16-row sine table plus a leaning object
-matrix, exercising `SETMAT`, `AFFINE` and `LINETAB` in one cart.
+`examples/warp/` is the reference for matrices: a 16-row sine table plus a
+leaning object matrix, exercising `SETMAT`, `AFFINE` and `LINETAB` in one cart.
+`examples/starfall2/` is the reference for save linkage: it declares
+`save_reads=starfall`, so it opens the first game's save read-only while
+keeping its own.
 
 Node position is canvas coordinates, so graphs round-trip losslessly.
 

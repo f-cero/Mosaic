@@ -83,39 +83,67 @@ button calls the same function, so what the editor exports is what the console
 accepts.
 
 
-## Save image (v1.1)
+## Save image (v2)
 
-One byte image is the whole save format: a battery-backed SRAM region, a flash
+One byte image is the whole save format: battery-backed SRAM, a flash
 partition, a `.msav` host file and an AI Drive object are the same bytes, read
 and written in place through a caller-owned buffer. No heap, no I/O, no floats.
 All little-endian:
 
 ```
-MOS1 | u16 ver=1 | u16 bytes | u8 slots | u8 reserved | u32 cart_crc
-copy[slot*2 + which]  for every slot, both copies, at a fixed stride of
-                      (bytes - 14) / (slots * 2)
+MOS1 | u16 ver=2 | u16 bytes | u8 slots | u8 loc | u16 flags
+     | u32 app_id | u32 dev_id | u32 cart_crc
+copy[slot*2 + which]  for every slot, both copies, fixed stride
+                      (bytes - 24) / (slots * 2)
 ```
 
 ```
 SLT1 | u32 seq | u16 len | u16 crc16(body) | u8 name[12]
-     | u16 hcrc (crc16 of the first 24 bytes) | u16 0 | body[len]
+     | u16 fmt | u16 0 | u64 tag | u16 hcrc | u16 0 | body[len]
 ```
 
-Normative rules:
+- A write goes to the copy with the **older `seq`** and commits by writing
+  `hcrc` (crc16 of the first 36 bytes) **last**, so a cut at any point leaves
+  the other copy authoritative. A record failing `hcrc`, the body CRC or the
+  MAC is never used.
+- The live copy is the valid copy with the highest `seq`. When the newest fails,
+  the older is used and the reader reports `MS_SAVE_F_FELLBACK | MS_SAVE_F_TORN`.
+- `fmt` is assigned by the game and carried verbatim; core never interprets the
+  body. `tag` is SipHash-2-4 over the first 28 bytes plus the body, keyed by the
+  developer key.
+- `len == 0` with an empty name is a tombstone, written through the same A/B
+  path, so an erase is as power-safe as a write.
+- v1 images (14-byte header, 28-byte record, `cart_crc` only) still read, flagged
+  `MS_SAVE_F_LEGACY`; they refuse writes (`MS_SAVE_E_LEGACY`) rather than
+  half-migrate, because promotion cannot happen in place.
 
-- A write goes to the copy with the **older `seq`**, and commits by writing
-  `hcrc` **last**. A power cut at any point therefore leaves the other copy
-  authoritative; a record whose `hcrc` or `body` CRC fails is never used.
-- The live copy is the valid copy with the highest `seq`. When the newest copy
-  fails its checks the older one is used and the reader reports
-  `MS_SAVE_F_FELLBACK | MS_SAVE_F_TORN` — a fallback is never silent.
-- `cart_crc` is the cart's TOC CRC32. Opening an image written by another build
-  is `MS_SAVE_E_CART`, not an empty save. The image is bound to exactly one
-  build on purpose: a struct-shaped save that silently reinterprets after an
-  edit is worse than a refused load.
-- `len == 0` with an empty name is a tombstone: an erased slot, and it is
-  written through the same A/B path so an erase is as power-safe as a write.
-- `h` bodies are capped by the region: `max_body = stride - 28`. A caller that
-  needs more must ask for a bigger region in the cart, not shrink the body.
-- A cart declares the region with asset kind 13 (§02). A cart without that
-  asset is **read-only by construction**.
+### Two homes, one format
+
+The bytes are identical; what differs is what the image is **bound to**.
+
+| Home | Bound to | Survives a rebuild | Travels with the cart |
+|---|---|---|---|
+| `MS_SAVE_LOC_CONSOLE` | `dev_id` + `app_id` | yes | no |
+| `MS_SAVE_LOC_CART` | `dev_id` + `app_id` + `cart_crc` | no | yes |
+
+The console home is the memory-card model: it follows the save id, so a
+rebuilt or updated build keeps the player's progress. The cartridge home is
+that cartridge's own SRAM: a rebuild is a different cartridge, so its saves are
+different too. A title may offer both, and `ms_save_store_read` answers with
+whichever home holds the newest copy of the slot, reporting which one it was.
+
+### Identity: the developer key and the save id
+
+- `dev` namespaces the studio. `dev_id = id32(dev)`; an image written under one
+  developer key is invisible to another (`MS_SAVE_E_DEV`), which is a refusal,
+  never an empty save.
+- `save_id` names the **save**, not the title. Three titles that want one
+  continuous campaign declare the same `save_id` and need nothing else.
+- `save_reads=<id> ...` grants **read-only** access to other save ids. A sequel
+  that keeps its own save but imports the predecessor's declares the
+  predecessor's id here. The grant is per-save and never implies a write.
+- `dev_key` keys the record MAC (defaults to `dev`). It travels in the cart, so
+  it stops accidents, cross-project collisions and casual editing — it is not a
+  DRM scheme and must not be described as one.
+
+A cart without a kind 13 asset (§02) is **read-only by construction**.

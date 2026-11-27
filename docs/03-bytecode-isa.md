@@ -56,8 +56,13 @@ to registers 8–15 with expression recursion; `number` emits `LDI32`.
 
 | op | bytes | operands | effect |
 |---|---|---|---|
-| `SAVE` | 4 | `slot, first_global, globals_n` | Write `globals_n` little-endian int32 globals starting at `first_global` as the slot body, name `"vm"`. |
-| `LOADSAVE` | 4 | `slot, first_global, globals_n` | Read the slot body back into those globals; a short body restores only the globals it covers. |
+| `SAVE` | 4 | `slot\|home, first_global, globals_n` | Write `globals_n` little-endian int32 globals starting at `first_global` as the slot body, name `"vm"`. |
+| `LOADSAVE` | 4 | `slot\|home, first_global, globals_n` | Read the slot body back into those globals; a short body restores only the globals it covers. |
+
+Bit 7 of the first operand selects the home: clear is the console store, set
+is the cartridge store. Bits 0..3 are the slot. A cart that asks for the
+cartridge home when the cartridge declares none gets `MS_SAVE_E_LOC` and keeps
+running, so the same bytecode is valid on a console with no cartridge.
 
 Both are inert (status `MS_SAVE_E_PARAM`, no VM error) when no image is
 attached, so a cart that uses them still runs on a host without storage. The

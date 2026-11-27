@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Mosaic — ms_cart.c: cart16 v2 mount / validate / write. */
 #include "mosaic/ms_cart.h"
+#include "mosaic/ms_save.h"
 #include <string.h>
 
 const char *ms_cart_err_str(int e)
@@ -179,12 +180,12 @@ int ms_check_save(const void *data, size_t bytes)
 {
     const uint8_t *p = (const uint8_t *)data;
     if (!p || bytes != 4) return 0;
-    const unsigned b = ms_rd16(p), slots = p[2];
+    const unsigned b = ms_rd16(p), slots = p[2], decl = p[3];
     if (b < 512u || b > 65532u) return 0;
     if (slots < 1u || slots > 8u) return 0;
-    if (p[3] != 0) return 0;
-    /* two copies per slot must each fit a header and a byte of body */
-    if ((b - 14u) / (slots * 2u) < 29u) return 0;
+    if (decl < 1u || decl > 3u) return 0;      /* bit0 console, bit1 cartridge */
+    /* two copies per slot must each fit the v2 record header and a body */
+    if ((b - MS_SAVE_HDR) / (slots * 2u) < MS_SAVE_COPY_HDR + 1u) return 0;
     return 1;
 }
 

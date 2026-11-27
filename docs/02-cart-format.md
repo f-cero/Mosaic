@@ -105,11 +105,12 @@ Readers accept both forms; writers emit v2.1. `manifest` `bg_map_w` /
 Mosaic extension (`MS_CART_F_EXT` required), payload 4 bytes:
 
 ```
-u16 region_bytes | u8 slots | u8 reserved(0)
+u16 region_bytes | u8 slots | u8 decl
 ```
 
-`region_bytes` 512..65532, `slots` 1..8, and the stride must leave at least
-29 bytes per copy. Declaring the region here (and mirroring it in the manifest
+`region_bytes` 512..65532, `slots` 1..8, `decl` is a bitmask — bit 0 console
+home, bit 1 cartridge home — and at least one bit must be set. The stride must
+leave at least a v2 record header plus one body byte per copy. Declaring the region here (and mirroring it in the manifest
 as `save=` / `save_slots=`) makes a cart's save capability inspectable before
 it runs: `mosaic save init` sizes the image from this asset, and a cart without
 it cannot be written to at all. The image bytes themselves live outside the

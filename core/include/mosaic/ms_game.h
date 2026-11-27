@@ -15,6 +15,13 @@ typedef struct {
     int  map_w, map_h;
     uint8_t mode, qfa, voices, music_voices, sfx_voices, brightness;
     uint16_t backdrop;
+    /* Save identity: the developer key namespaces the studio, save_id names
+     * the save (not the title), save_reads lists the save ids this title may
+     * open read-only. See ms_save.h. */
+    char     dev[33], save_id[25], dev_key[33];
+    uint32_t dev_id, app_id;
+    uint32_t reads[MS_SAVE_READS_MAX];
+    int      n_reads;
 } ms_manifest_t;
 
 typedef struct {
@@ -63,9 +70,12 @@ void ms_game_sfx(ms_game_t *g, int program, int note);
 void ms_game_music(ms_game_t *g, int slot, int loop);
 const char *ms_game_error(const ms_game_t *g);
 
-/* Bind a save image so SAVE / LOADSAVE opcodes reach it. The image is
- * caller-owned; pass NULL to detach. Call after ms_game_load. */
-void ms_game_set_save(ms_game_t *g, ms_save_t *save);
+/* Bind the save store (<stdio.h>-free, caller-owned) so SAVE / LOADSAVE
+ * reach it. Pass NULL to detach. Call after ms_game_load. */
+void ms_game_set_saves(ms_game_t *g, ms_save_store_t *saves);
+/* Fill an identity from the manifest, so a host attaches the right store. */
+void ms_game_save_id(const ms_game_t *g, ms_save_id_t *id, uint8_t loc,
+                     uint32_t cart_crc);
 
 /* Sprite sheet decode, shared with tools. */
 int ms_sheet_parse(ms_sheet_t *s, const void *data, size_t bytes);

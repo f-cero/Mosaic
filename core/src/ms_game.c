@@ -5,9 +5,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void ms_game_set_save(ms_game_t *g, ms_save_t *save)
+void ms_game_set_saves(ms_game_t *g, ms_save_store_t *saves)
 {
-    if (g) g->vm.save = save;
+    if (g) g->vm.saves = saves;
+}
+
+void ms_game_save_id(const ms_game_t *g, ms_save_id_t *id, uint8_t loc, uint32_t cart_crc)
+{
+    if (!id) return;
+    memset(id, 0, sizeof *id);
+    if (!g) return;
+    id->dev_id = g->man.dev_id;
+    id->app_id = g->man.app_id;
+    id->dev_key = g->man.dev_key[0] ? g->man.dev_key : (g->man.dev[0] ? g->man.dev : NULL);
+    id->loc = loc;
+    id->cart_crc = cart_crc;
+    id->n_reads = g->man.n_reads;
+    for (int i = 0; i < g->man.n_reads && i < MS_SAVE_READS_MAX; i++) id->reads[i] = g->man.reads[i];
 }
 
 const char *ms_game_error(const ms_game_t *g) { return g ? g->error : "no game"; }
@@ -92,6 +106,21 @@ int ms_manifest_parse(ms_manifest_t *m, const char *text, size_t bytes)
     if (key_val(text, "bg_map_w", tmp, sizeof(tmp)) == 0) m->map_w = atoi(tmp);
     if (key_val(text, "bg_map_h", tmp, sizeof(tmp)) == 0) m->map_h = atoi(tmp);
     if (key_val(text, "splash", tmp, sizeof(tmp)) == 0) snprintf(m->splash, sizeof(m->splash), "%s", tmp);
+    if (key_val(text, "dev", tmp, sizeof(tmp)) == 0) snprintf(m->dev, sizeof(m->dev), "%.32s", tmp);
+    if (key_val(text, "dev_key", tmp, sizeof(tmp)) == 0) snprintf(m->dev_key, sizeof(m->dev_key), "%.32s", tmp);
+    if (key_val(text, "save_id", tmp, sizeof(tmp)) == 0) snprintf(m->save_id, sizeof(m->save_id), "%.24s", tmp);
+    if (key_val(text, "save_reads", tmp, sizeof(tmp)) == 0) {
+        const char *r = tmp;
+        while (*r && m->n_reads < MS_SAVE_READS_MAX) {
+            char one[24]; int k = 0;
+            while (*r == ' ' || *r == ',') r++;
+            while (*r && *r != ' ' && *r != ',' && k < 23) one[k++] = *r++;
+            one[k] = 0;
+            if (k) m->reads[m->n_reads++] = ms_id32(one);
+        }
+    }
+    m->dev_id = ms_id32(m->dev);
+    m->app_id = ms_id32(m->save_id[0] ? m->save_id : m->dev);
     if (!m->voices || m->voices > MS_VOICES_MAX) return -1;
     if ((unsigned)m->music_voices + m->sfx_voices > m->voices) return -1;
     return 0;

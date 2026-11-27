@@ -139,11 +139,31 @@ SLT1 | u32 seq | u16 len | u16 crc16(body) | u8 name[12] | body[len]
       moved between host and hardware without conversion.
 - [x] Export: `.msv` checksum-bound bundle (`cart_crc` + `device_id` + slot payloads) so
       a save traded between consoles is checked before it is written.
-- [ ] ESP32 port wiring: NVS for tiny carts, a flash partition or SD file for
+- [ ] ESP32 port wiring (v2 identity): NVS for tiny carts, a flash partition or SD file for
       the 8 KB image. Core side is done — the image is written in place and a
       flush is a plain copy of the region, so the port only supplies the bytes.
 - [x] VM: `MSOP_LOADG/STOREG` already exist for globals; add `MSOP_SAVE` /
       `MSOP_LOADSAVE` (slot, offset, len) so a cart can persist without C.
+
+### Second linking mechanism (v2, shipped)
+
+The first mechanism binds an image to one build (`cart_crc`). That is right for
+a cartridge's own SRAM and wrong for everything else — a rebuild lost the save,
+and a sequel could never read the predecessor's. v2 adds a **developer-key link**
+and a second home:
+
+- `dev=` namespaces the studio, `save_id=` names the save (shared by a trilogy
+  that wants one continuous campaign), `save_reads=` grants explicit read-only
+  access to another save id. An image from another developer is refused, not
+  empty.
+- Console home: bound to `dev_id` + `app_id`, so it survives rebuilds.
+  Cartridge home: bound to `dev_id` + `app_id` + `cart_crc`, so it travels with
+  that cartridge and only that cartridge.
+- Records carry a SipHash-2-4 tag keyed by the developer key, so a hand-edited
+  body fails even when its cheap CRC is recomputed. The key is in the cart: this
+  is an integrity and collision guard, not DRM.
+- `ms_save_store_*` reads the newest copy across both homes and reports which
+  one answered.
 
 ### Acceptance
 

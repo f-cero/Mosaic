@@ -8,6 +8,10 @@ music_voices=12
 sfx_voices=4
 backdrop=0x0841
 save=8192
+save_loc=both
+dev=cero-labs
+dev_key=mosaic-demo-key
+save_id=starfall
 level=assets/level.png 4
 music=assets/theme.mid
 sheet player assets/player.png 16 16 4
