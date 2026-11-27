@@ -32,6 +32,9 @@
 
 #define PI 3.14159265358979323846
 
+/* tools/video_web.c — self-contained HTML export; owns the embedded decoder. */
+int mosaic_video_web(int argc, char **argv);
+
 typedef struct {
     uint16_t *px; int n, cap, w, h;
 } clip_t;
@@ -387,14 +390,26 @@ static int cmd_info(int argc, char **argv)
     return 0;
 }
 
+/* Raw RGB565 dump, little-endian: what the web decoder is checked against and
+ * what an external encoder (ffmpeg rawvideo) wants. */
+static void save_r16(const char *path, const uint16_t *px, size_t n)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    fwrite(px, sizeof(uint16_t), n, f);
+    fclose(f);
+}
+
 static int cmd_frames(int argc, char **argv)
 {
     const char *in = NULL, *out = NULL;
+    int raw = 0;
     for (int i = 3; i < argc; i++) {
         if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(argv[i], "--raw")) raw = 1;
         else if (!in) in = argv[i];
     }
-    if (!in || !out) { fprintf(stderr, "usage: mosaic video frames clip.mvid --out dir\n"); return 1; }
+    if (!in || !out) { fprintf(stderr, "usage: mosaic video frames clip.mvid --out dir [--raw]\n"); return 1; }
     size_t sz = 0;
     uint8_t *b = mvid_read_file(in, &sz);
     if (!b) { fprintf(stderr, "cannot read %s\n", in); return 2; }
@@ -425,10 +440,12 @@ static int cmd_frames(int argc, char **argv)
                 }
             snprintf(path, sizeof(path), "%s/frame%03u.png", out, f);
             ms_write_png(path, 320, 240, big);
+            if (raw) { snprintf(path, sizeof(path), "%s/frame%03u.r16", out, f); save_r16(path, big, 320u * 240u); }
         } else {
             mvid_draw(&v, big, (unsigned)cw, (unsigned)chh);
             snprintf(path, sizeof(path), "%s/frame%03u.png", out, f);
             ms_write_png(path, cw, chh, big);
+            if (raw) { snprintf(path, sizeof(path), "%s/frame%03u.r16", out, f); save_r16(path, big, (size_t)cw * (size_t)chh); }
         }
         f++;
     } while (mvid_next(&v) == 1);
@@ -441,13 +458,14 @@ static int cmd_frames(int argc, char **argv)
 int mosaic_video_main(int argc, char **argv)
 {
     if (argc < 3) {
-        fprintf(stderr, "mosaic video <encode|compose|info|frames> ...\n");
+        fprintf(stderr, "mosaic video <encode|compose|info|frames|web> ...\n");
         return 1;
     }
     if (!strcmp(argv[2], "encode")) return cmd_encode(argc, argv);
     if (!strcmp(argv[2], "compose")) return cmd_compose(argc, argv);
     if (!strcmp(argv[2], "info")) return cmd_info(argc, argv);
     if (!strcmp(argv[2], "frames")) return cmd_frames(argc, argv);
+    if (!strcmp(argv[2], "web")) return mosaic_video_web(argc, argv);
     fprintf(stderr, "unknown video verb %s\n", argv[2]);
     return 1;
 }

@@ -21,8 +21,18 @@ if(NOT MSVC)
   target_compile_options(mosaic_core PRIVATE -Wno-unused-parameter)
 endif()
 
-add_executable(mosaic tools/main.c tools/video_main.c codec/mvid_encode.c)
-target_include_directories(mosaic PRIVATE third_party)
+# `mosaic video web` inlines web/mvid.js so a clip exports as one HTML file.
+add_custom_command(
+  OUTPUT ${CMAKE_BINARY_DIR}/web_mvid_js.h
+  COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_SOURCE_DIR}/web/mvid.js
+          -DOUT=${CMAKE_BINARY_DIR}/web_mvid_js.h
+          -P ${CMAKE_SOURCE_DIR}/cmake/embed_web.cmake
+  DEPENDS ${CMAKE_SOURCE_DIR}/web/mvid.js ${CMAKE_SOURCE_DIR}/cmake/embed_web.cmake
+  COMMENT "Embedding web/mvid.js into the CLI")
+
+add_executable(mosaic tools/main.c tools/video_main.c tools/video_web.c
+               codec/mvid_encode.c ${CMAKE_BINARY_DIR}/web_mvid_js.h)
+target_include_directories(mosaic PRIVATE third_party ${CMAKE_BINARY_DIR})
 target_link_libraries(mosaic PRIVATE mosaic_core)
 
 enable_testing()
@@ -40,6 +50,16 @@ add_executable(mosaic_video_test core/tests/test_video.c codec/mvid_encode.c)
 target_include_directories(mosaic_video_test PRIVATE third_party codec)
 target_link_libraries(mosaic_video_test PRIVATE mosaic_core)
 add_test(NAME mosaic_video_test COMMAND mosaic_video_test)
+
+# The web decoder must render every frame bit-identically to the C decoder.
+find_program(NODE_EXECUTABLE node)
+if(NODE_EXECUTABLE AND EXISTS ${CMAKE_SOURCE_DIR}/web/mvid.js)
+  add_test(NAME mosaic_web_codec_test
+           COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/mvid_web_test.mjs
+                   --mosaic $<TARGET_FILE:mosaic>
+                   --clip ${CMAKE_SOURCE_DIR}/examples/hello/assets/splash.mvid
+           WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+endif()
 
 # Studio (SDL2 GUI) — see studio/README.md
 # SDL2 can come from a config package (Linux/SDL2_DIR) or from an explicit

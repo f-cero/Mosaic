@@ -293,3 +293,73 @@ a fade out. Result: 70 frames, 251403 bytes (3591.5 B/frame),
 260228 B. `ms_game_load` mounts cartridge kind 11, `ms_game_update` advances it
 at the clip's fps, A or START skips, and playback is handed to the PPU with
 `bg[1].tiles = sheet; bg[1].map = map`.
+
+## 10.6 Playing MVID outside the engine
+
+`web/mvid.js` is a complete MVID v1 decoder in dependency-free JavaScript: the
+same header, frame records, atlas, tilemap, 4bpp/8bpp packing, flips, scroll and
+PPU brightness ramp as `codec/mvid_decode.c`. It runs unchanged in browsers and
+in Node, so a clip can back a web page, a React component, an Electron app or a
+build step — no engine, no SDL, no toolchain.
+
+### 10.6.1 Drop-in element
+
+```html
+<script src="mvid.js"></script>
+<mosaic-video src="splash.mvid" loop autoplay style="width:640px"></mosaic-video>
+```
+
+The element registers itself when `customElements` exists. `src` is required;
+`loop` and `autoplay` mirror the header flags. It fires `mosaic-load` (detail =
+parsed info) and `mosaic-error`, and a click toggles playback. The canvas keeps
+the coded size and CSS scales it with `image-rendering: pixelated`, so a QFA clip
+(160x120 coded) is doubled by the compositor with no resampling.
+
+### 10.6.2 One self-contained page
+
+```
+mosaic video web clip.mvid --out clip.html [--title T] [--once]
+```
+
+The decoder is inlined at build time (`cmake/embed_web.cmake`) and the clip is
+base64 in the page: no server, no MIME type, no CORS, no network. Hello's splash
+(245.5 KB) becomes a 349.2 KB page; a single title frame becomes 43.5 KB.
+Because it is one file it can be mailed, hosted, iframed or opened from disk.
+
+### 10.6.3 API
+
+| call | use |
+|---|---|
+| `MVID.check(bytes)` | `null` if valid, else the error message |
+| `new MVID.Decoder(bytes)` | `.decode(n)`, `.next()`, `.seek(n)` |
+| `.render565(u16, w, h)` | frame as RGB565 — what the console would show |
+| `.renderDisplay(u16, stride)` | display frame; QFA doubled |
+| `.renderInto(u32, w, h)` | frame as 0xAABBGGRR, ready for `ImageData` |
+| `MVID.play(canvas, bytes, opts)` | Player: `play/pause/seek/step/destroy`, `onframe`, `onended` |
+| `MVID.fromBase64(str)` | base64 to `Uint8Array` |
+
+### 10.6.4 Exactness, checked
+
+`tools/mvid_web_test.mjs` renders every frame twice — once through
+`codec/mvid_decode.c` (via `mosaic video frames --raw`, raw RGB565), once
+through `web/mvid.js` — and compares pixel by pixel with zero tolerance. ctest
+runs it as `mosaic_web_codec_test` when node is present.
+
+Measured on this tree, `examples/hello/assets/splash.mvid` (70 frames, 320x240
+4bpp, 12 fps): 70/70 frames identical, 0 differing pixels out of 5,376,000.
+QFA clips (qfa4, qfa8, doubled to 320x240) pass the same test.
+Cost: 71 frames decoded+rendered in 41.8 ms (0.59 ms/frame, ~1699 fps of headroom)
+
+One trap worth recording: the first run of this test reported 38 mismatching
+frames while the decoder was correct — the harness wrote a 32-bit RGBA buffer
+through a `Uint16Array` view, which silently keeps `(g << 8) | r`. Keep the 565
+path (`render565`, `renderDisplay`) and the RGBA path (`renderInto`) apart.
+
+### 10.6.5 Limits
+
+- **No audio yet.** `flags` bit 1 is reserved, so a web player cannot score a clip.
+- **No WASM build.** The JS decoder is fast enough at these sizes; WASM would
+  save CPU, not unlock anything.
+- **JS is required.** There is no `<video>` fallback: MVID is a tile format, not
+  something a browser's media stack can decode.
+
