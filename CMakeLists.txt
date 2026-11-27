@@ -51,6 +51,10 @@ target_include_directories(mosaic_video_test PRIVATE third_party codec)
 target_link_libraries(mosaic_video_test PRIVATE mosaic_core)
 add_test(NAME mosaic_video_test COMMAND mosaic_video_test)
 
+add_executable(mosaic_matrix_test core/tests/test_matrix.c)
+target_link_libraries(mosaic_matrix_test PRIVATE mosaic_core)
+add_test(NAME mosaic_matrix_test COMMAND mosaic_matrix_test)
+
 # The web decoder must render every frame bit-identically to the C decoder.
 find_program(PYTHON3_EXECUTABLE python3)
 if(PYTHON3_EXECUTABLE AND EXISTS ${CMAKE_SOURCE_DIR}/tools/audio_test.py)

@@ -35,6 +35,16 @@ typedef struct {
     const int16_t *line_scroll_y;
 } ms_bg_t;
 
+/* 16.16 2x2 matrix. Maps a sampling coordinate about the sprite centre:
+ * src = M * (px - w/2, py - h/2) + (w/2, h/2). Stationary scale/rotate/shear. */
+typedef struct { ms_fix a, b, c, d; } ms_matrix_t;
+
+ms_matrix_t ms_matrix_identity(void);
+ms_matrix_t ms_matrix_scale(ms_fix sx, ms_fix sy);
+ms_matrix_t ms_matrix_rot(ms_fix turns);          /* 1.0 == 360 degrees   */
+ms_matrix_t ms_matrix_shear(ms_fix kx, ms_fix ky);/* src += k * other axis */
+ms_matrix_t ms_matrix_mul(ms_matrix_t lhs, ms_matrix_t rhs); /* rhs then lhs */
+
 typedef struct {
     int16_t  x, y;              /* top-left, screen space                */
     uint8_t  w, h;              /* 8..64, multiples of 8                 */
@@ -42,11 +52,10 @@ typedef struct {
     uint8_t  pal_slot;          /* 4bpp: 16-colour slot in sprite bank   */
     uint8_t  priority;          /* 0 front .. 3 back                     */
     uint8_t  flags;             /* MS_OAM_*                              */
-    int8_t   affine;            /* matrix index or -1                    */
+    int8_t   affine;            /* object matrix index, or -1            */
+    const ms_matrix_t *line_mat;/* optional per-scanline table, o->h rows */
     const uint8_t *tiles;       /* NULL -> ppu.spr_tiles                 */
 } ms_oam_t;
-
-typedef struct { ms_fix a, b, c, d; } ms_matrix_t;
 
 typedef struct {
     uint16_t backdrop;          /* RGB565                                */

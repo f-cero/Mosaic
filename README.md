@@ -79,4 +79,7 @@ game, host tests, ROM packing. ESP32 port is compile-ready source that needs
 ESP-IDF (not built here). See `docs/07-compatibility.md` for the ESP-16
 reference deltas that Mosaic fixes.
 
+Open work — sprite matrices, save formats, dedicated server — is planned in
+[docs/ROADMAP.md](docs/ROADMAP.md).
+
 License: Apache-2.0 (`LICENSE`, `NOTICE`).

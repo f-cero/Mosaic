@@ -7,6 +7,51 @@
 
 #define RANK_BACKDROP 9
 
+/* ---- matrices ---------------------------------------------------------- */
+ms_matrix_t ms_matrix_identity(void)
+{
+    ms_matrix_t m = { MS_FIX_ONE, 0, 0, MS_FIX_ONE };
+    return m;
+}
+
+ms_matrix_t ms_matrix_scale(ms_fix sx, ms_fix sy)
+{
+    ms_matrix_t m = { sx, 0, 0, sy };
+    return m;
+}
+
+ms_matrix_t ms_matrix_rot(ms_fix turns)
+{
+    /* ms_sin/ms_cos reach full scale at a quarter turn but not 16.16's 1.0, so
+     * normalise against that peak: a rotation must compose with the same unit
+     * as scale/shear or a rotate-after-scale would silently shrink. */
+    const ms_fix peak = ms_sin(MS_FIX_ONE / 4);
+    ms_fix c, s;
+    ms_matrix_t m;
+    if (peak == 0) return ms_matrix_identity();
+    c = (ms_fix)(((int64_t)ms_cos(turns) * MS_FIX_ONE) / peak);
+    s = (ms_fix)(((int64_t)ms_sin(turns) * MS_FIX_ONE) / peak);
+    m.a = c; m.b = -s; m.c = s; m.d = c;
+    return m;
+}
+
+ms_matrix_t ms_matrix_shear(ms_fix kx, ms_fix ky)
+{
+    ms_matrix_t m = { MS_FIX_ONE, kx, ky, MS_FIX_ONE };
+    return m;
+}
+
+/* rhs is applied first: (lhs * rhs) * v == lhs * (rhs * v). */
+ms_matrix_t ms_matrix_mul(ms_matrix_t l, ms_matrix_t r)
+{
+    ms_matrix_t o;
+    o.a = (ms_fix)(((int64_t)l.a * r.a + (int64_t)l.b * r.c) >> 16);
+    o.b = (ms_fix)(((int64_t)l.a * r.b + (int64_t)l.b * r.d) >> 16);
+    o.c = (ms_fix)(((int64_t)l.c * r.a + (int64_t)l.d * r.c) >> 16);
+    o.d = (ms_fix)(((int64_t)l.c * r.b + (int64_t)l.d * r.d) >> 16);
+    return o;
+}
+
 static void ppu_clear(ms_ppu_t *p)
 {
     memset(p, 0, sizeof(*p));
@@ -157,7 +202,18 @@ static void sprite_scanline(const ms_ppu_t *ppu, const ms_oam_t *o, int y,
     if (!tiles) return;
     const uint8_t rk = o->priority;
     const int wt = o->w >> 3;
-    const ms_matrix_t *m = (o->affine >= 0 && o->affine < (int)MS_MAX_MATRICES) ? &ppu->mat[o->affine] : NULL;
+    /* Effective sampling matrix for this row: the object matrix first, then the
+     * per-scanline table entry. Composed once per row, not per pixel. */
+    int has_m = 0;
+    ms_matrix_t mm;
+    if (o->affine >= 0 && o->affine < (int)MS_MAX_MATRICES) {
+        mm = ppu->mat[o->affine];
+        has_m = 1;
+    }
+    if (o->line_mat) {
+        mm = has_m ? ms_matrix_mul(mm, o->line_mat[sy]) : o->line_mat[sy];
+        has_m = 1;
+    }
     int x0 = o->x, x1 = o->x + o->w;
     if (x1 <= 0 || x0 >= w) return;
     if (x0 < 0) x0 = 0;
@@ -165,10 +221,10 @@ static void sprite_scanline(const ms_ppu_t *ppu, const ms_oam_t *o, int y,
 
     for (int x = x0; x < x1; x++) {
         int px = x - o->x, py = sy;
-        if (m) {
+        if (has_m) {
             int cx = px - o->w / 2, cy = py - o->h / 2;
-            px = (int)(((int64_t)m->a * cx + (int64_t)m->b * cy) >> 16) + o->w / 2;
-            py = (int)(((int64_t)m->c * cx + (int64_t)m->d * cy) >> 16) + o->h / 2;
+            px = (int)(((int64_t)mm.a * cx + (int64_t)mm.b * cy) >> 16) + o->w / 2;
+            py = (int)(((int64_t)mm.c * cx + (int64_t)mm.d * cy) >> 16) + o->h / 2;
             if (px < 0 || py < 0 || px >= o->w || py >= o->h) continue;
         }
         if (o->flags & MS_OAM_FLIP_H) px = o->w - 1 - px;
