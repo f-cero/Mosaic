@@ -187,3 +187,109 @@ whole contract is that recorded frames replay identically.
 3. Splash integration in the tutorial project, which currently has no boot
    sequence at all.
 4. Only then: PCM audio track, if voice-over is ever wanted.
+
+
+## 10. MVID v1 — the implemented container
+
+Shipped as `codec/` (container + allocation-free decoder + tile-atlas encoder),
+`core/src/ms_video.c` (PPU playback), `tools/video_main.c` (the `mosaic video`
+verbs), `tools/mvidplay/` (SDL2), `tools/mvidplay_win32/` (Win32 GDI, no runtime
+dependency) and `android/` (JNI + NDK CMake). All integers little-endian.
+
+### 10.1 Header (56 bytes)
+
+| off | size | field |
+|---|---|---|
+| 0 | 4 | `MVID` |
+| 4 | 2 | version = 1 |
+| 6 | 2 | hdr_len = 56 |
+| 8 | 2 | width (320 or 160) |
+| 10 | 2 | height (240 or 120) |
+| 12 | 1 | fps, 1..60 |
+| 13 | 1 | flags: 1 loop, 2 has_audio, 4 **QFA** (coded 160x120, display x2) |
+| 14 | 2 | frame count (max 4096) |
+| 16 | 2 | map_w, logical tiles wide (max 128; 64 for the engine player) |
+| 18 | 2 | map_h |
+| 20 | 1 | bpp: 4 or 8 |
+| 22 | 2 | palette entry count (max 256) |
+| 24 | 4 | palette offset |
+| 28 | 4 | frame-index offset (u32 file offset per frame) |
+| 32 | 4 | audio offset (0 = none) |
+| 36 | 4 | audio length |
+| 40 | 4 | sheet bytes the player must reserve |
+| 44 | 4 | CRC32 of everything from pal_off to EOF |
+
+The tilemap is padded to next_pow2(map_w) x next_pow2(map_h) and the padding is
+filled by wrapping the logical map, so a scroll past the edge repeats content
+instead of going blank.
+
+### 10.2 Frame record (16 bytes, then payload)
+
+| off | size | field |
+|---|---|---|
+| 0 | 1 | type: 0 INTRA, 1 PATCH, 2 PAN |
+| 2 | 2 | payload length |
+| 4 | 2 | scroll_x (signed, absolute per frame) |
+| 6 | 2 | scroll_y |
+| 8 | 2 | map op count |
+| 10 | 2 | tile-def count |
+| 12 | 1 | brightness 0..16 (16 = normal, the PPU's own effect) |
+
+Payload order is fixed: `u16 np` then np x (u8 index, u16 rgb565) palette diffs;
+`u16 nt` then nt x (u16 slot, tile bytes) tile defs (32 B at 4bpp, 64 B at 8bpp);
+`u16 no` then no x (u16 cell, u16 entry) map ops. Entries use the engine's SNES
+packing (bits 0-9 tile, 10-12 palette slot, 13 priority, 14/15 flips). INTRA
+resets the atlas. PAN has an empty payload: a scroll plus a brightness value,
+so a pan frame costs 16 bytes.
+
+### 10.3 The QFA photographic variant
+
+Flags bit 2 means the clip is coded at 160x120 and the display doubles every
+pixel — the PPU's QFA path. The map is 20x15 tiles = 300 cells, which fits the
+1024-tile atlas three times over, so the atlas keeps history instead of
+thrashing. Measured on a 24-frame Ken-Burns clip (ffmpeg zoompan from a
+photograph, 12 fps), decoded, upscaled x2 and compared with the 320x240 source:
+
+| mode | coded | bytes/frame | PSNR vs source |
+|---|---|---|---|
+| tile4 | 320x240 | 5618 | 7.85 dB |
+| qfa4 | 160x120 | 4617 | 11.50 dB |
+| **qfa8** | 160x120 | 18761 | **19.05 dB** |
+
+qfa8 is therefore the photographic mode: 8bpp tiles, 256 colours per tile, no
+palette slots, 220 KB/s at 12 fps. That is Mega-CD-class picture quality, not
+video, and it is the honest ceiling of 1024 8x8 tiles.
+
+Measured limits:
+- **Full-resolution photographic video does not fit.** 320x240 is 1200 tiles per
+  frame and a map entry has 10 bits of tile index, so 1024 is the ceiling. The
+  encoder now degrades gracefully (tail-only eviction, never a dangling
+  reference) but the picture collapses: see the 7.85 dB row.
+- **4bpp slots are poor for photographs** (11.50 dB) because the eight 16-entry
+  slots are cut from the palette in median-cut order. Clustering the palette
+  into slots by luminance/occupancy is the next codec task.
+- **4bpp is exact for pixel art**: `mosaic_video_test` asserts that every
+  decoded frame of a 24-frame sprite clip equals its source, byte for byte.
+
+### 10.4 Tools
+
+    mosaic video encode --input clip.mp4 --mode qfa8 --fps 12 --out intro.mvid
+    mosaic video compose scene.mvj --out splash.mvid
+    mosaic video info clip.mvid
+    mosaic video frames clip.mvid --out frames/
+    mvidplay clip.mvid            # Linux and Windows
+
+`encode` shells out to the **ffmpeg binary** for decoding only; nothing links
+libav*, so Mosaic stays Apache-2.0 and the user's ffmpeg keeps its own licence.
+`compose` renders through `ms_convert_level` + `ms_ppu_render` with affine
+matrices, scrolls and brightness, so the clip is the engine's own output.
+
+### 10.5 The tutorial splash (shipped)
+
+`examples/hello/splash.mvj` composes five shots: a fade-in pan across a 384x240
+title card, a hold, a fade to black, then an affine zoom into the level art and
+a fade out. Result: 70 frames, 251403 bytes (3591.5 B/frame),
+7 INTRA / 25 PATCH / 38 PAN. The Hello cart grows from 8,763 B to
+260228 B. `ms_game_load` mounts cartridge kind 11, `ms_game_update` advances it
+at the clip's fps, A or START skips, and playback is handed to the PPU with
+`bg[1].tiles = sheet; bg[1].map = map`.
