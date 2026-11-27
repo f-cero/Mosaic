@@ -9,6 +9,11 @@ runtime.
 * **Graph** — drag nodes; drag from the right pin to a left pin to connect
   (exec pins amber, value pins blue). `Del` removes the selected node.
 * **Inspector** — select a node; `-`/`+` change numeric properties.
+* **Sprite matrix** — `<`/`>` pick one of the 16 shared slots; `-`/`+` edit
+  `a b c d` in 0.05 steps and the wireframe preview shows the warp. Below it,
+  `affine` and `linetab` choose the selected entity's object matrix and
+  per-scanline table. Each edit writes the `.mpj` line and rebuilds, so the
+  Scene tab shows the result immediately.
 * **Scene** — live 320×240 preview of the compiled game; arrow keys/A move,
   Space pauses. This runs the real engine, not a mock.
 * **Sequence** — the compiled exec chain, in order.
@@ -40,6 +45,18 @@ link 1.next 2.in
 link 2.cond 3.out
 link 2.then 4.in
 ```
+`mat set=N a=.. b=.. c=.. d=..` appends one row to per-scanline table `N`;
+rows accumulate in file order and tables must be contiguous from 0. They
+compile to cart kind 12, and an entity selects them with
+`affine=<slot> linetab=<table>` on its own line:
+```
+mat set=0 a=1.00 b=0.22 c=0.00 d=1.00     # scanline 0 of table 0
+entity player play sheet=0 x=160 y=176 affine=1 linetab=0
+node 2 setmat 40 110 slot=1 a=1.00 b=0.35 c=0.00 d=1.00
+```
+`examples/warp/` is the reference: a 16-row sine table plus a leaning object
+matrix, exercising `SETMAT`, `AFFINE` and `LINETAB` in one cart.
+
 Node position is canvas coordinates, so graphs round-trip losslessly.
 
 ## Screenshot mode (CI)

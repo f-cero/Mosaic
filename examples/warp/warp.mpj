@@ -1,0 +1,39 @@
+# Mosaic project — Warp (sprite matrix demo)
+# A 16-row sine line table bends the player sprite per scanline; the start
+# chain then leans it with a shared object matrix (SETMAT) so both halves of
+# the composition order are visible at once.
+title=Warp
+author=Mosaic Labs
+mode=rich
+qfa=0
+voices=16
+music_voices=12
+sfx_voices=4
+backdrop=0x0841
+level=../starfall/assets/level.png 4
+sheet player ../starfall/assets/player.png 16 16 4
+entity player play sheet=0 x=160 y=176 anim=0 priority=1 affine=1 linetab=0
+mat set=0 a=1.00 b=0.00 c=0.00 d=1.00
+mat set=0 a=1.00 b=0.08 c=0.00 d=1.00
+mat set=0 a=1.00 b=0.16 c=0.00 d=1.00
+mat set=0 a=1.00 b=0.20 c=0.00 d=1.00
+mat set=0 a=1.00 b=0.22 c=0.00 d=1.00
+mat set=0 a=1.00 b=0.20 c=0.00 d=1.00
+mat set=0 a=1.00 b=0.16 c=0.00 d=1.00
+mat set=0 a=1.00 b=0.08 c=0.00 d=1.00
+mat set=0 a=1.00 b=0.00 c=0.00 d=1.00
+mat set=0 a=1.00 b=-0.08 c=0.00 d=1.00
+mat set=0 a=1.00 b=-0.16 c=0.00 d=1.00
+mat set=0 a=1.00 b=-0.20 c=0.00 d=1.00
+mat set=0 a=1.00 b=-0.22 c=0.00 d=1.00
+mat set=0 a=1.00 b=-0.20 c=0.00 d=1.00
+mat set=0 a=1.00 b=-0.16 c=0.00 d=1.00
+mat set=0 a=1.00 b=-0.08 c=0.00 d=1.00
+mat set=1 a=1.00 b=0.00 c=0.00 d=1.00
+node 1 start 320 40
+node 2 setmat 320 140 slot=1 a=1.00 b=0.35 c=0.00 d=1.00
+node 3 update 320 240
+node 4 wait 560 240 frames=1
+link 1.next 2.in
+link 2.next 3.in
+link 3.next 4.in

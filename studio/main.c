@@ -29,6 +29,10 @@ static int g_sel = -1, g_tab = 0; /* 0 graph 1 scene 2 sequence 3 assets */
 static int g_drag = -1, g_dx, g_dy, g_wire = -1, g_wx, g_wy, g_panx, g_pany;
 static char g_log[512]; static int g_log_ok;
 static int g_playing = 1;
+/* matrix widget: one editable row of a shared slot + the entity's warps */
+static int g_mat_slot = 0;
+static double g_mv[16][4]; static int g_mv_ok[16], g_mat_rows[16];
+static int g_ent_affine = -1, g_ent_linetab = -1, g_ent_line = -1;
 
 static SDL_Window *g_win; static SDL_Renderer *g_ren; static SDL_Texture *g_font;
 static SDL_Texture *g_scene;
@@ -84,6 +88,9 @@ static void project_load(const char *path)
     size_t dl = sl? (size_t)(sl-path):0; memcpy(g_dir,path,dl); g_dir[dl]=0;
     FILE *f=fopen(path,"r"); if(!f) return;
     g_nlines=0; g_nodes_n=0; g_links_n=0;
+    g_ent_affine=g_ent_linetab=-1; g_ent_line=-1;
+    memset(g_mv_ok,0,sizeof(g_mv_ok)); memset(g_mat_rows,0,sizeof(g_mat_rows));
+    for(int i=0;i<16;i++){ g_mv[i][0]=1; g_mv[i][1]=0; g_mv[i][2]=0; g_mv[i][3]=1; }
     while(g_nlines<MAXL && fgets(g_lines[g_nlines],CW,f)){
         char *nl=strpbrk(g_lines[g_nlines],"\r\n"); if(nl)*nl=0;
         char *s=g_lines[g_nlines];
@@ -110,6 +117,18 @@ static void project_load(const char *path)
                 g_links[g_links_n].s=a; g_links[g_links_n].d=b;
                 snprintf(g_links[g_links_n].sp,12,"%s",pa); snprintf(g_links[g_links_n].dp,12,"%s",pb);
                 g_links_n++;
+            }
+        } else if(!strncmp(s,"mat ",4)){
+            int tb=0; double a=1,b=0,c=0,d=1;
+            if(sscanf(s+4,"set=%d a=%lf b=%lf c=%lf d=%lf",&tb,&a,&b,&c,&d)>=1 && tb>=0 && tb<16){
+                if(!g_mv_ok[tb]){ g_mv[tb][0]=a; g_mv[tb][1]=b; g_mv[tb][2]=c; g_mv[tb][3]=d; g_mv_ok[tb]=1; }
+                g_mat_rows[tb]++;
+            }
+        } else if(!strncmp(s,"entity ",7)){
+            if(g_ent_line<0){
+                g_ent_line=g_nlines;
+                const char *k=strstr(s,"affine=");  g_ent_affine = k?atoi(k+7):-1;
+                k=strstr(s,"linetab=");             g_ent_linetab= k?atoi(k+8):-1;
             }
         }
         g_nlines++;
@@ -158,6 +177,33 @@ static void do_export(void)
     char msg[300]; snprintf(msg,sizeof(msg),"exported %s",out); setlog(msg,1);
 }
 
+/* ---------- matrix widget writes ---------- */
+static void mat_commit(int slot)
+{
+    char want[CW]; snprintf(want,sizeof(want),"mat set=%d ",slot);
+    char nl[CW];
+    snprintf(nl,sizeof(nl),"mat set=%d a=%.2f b=%.2f c=%.2f d=%.2f",
+             slot,g_mv[slot][0],g_mv[slot][1],g_mv[slot][2],g_mv[slot][3]);
+    int found=-1;
+    for(int i=0;i<g_nlines;i++) if(!strncmp(g_lines[i],want,strlen(want))){ found=i; break; }
+    if(found>=0) snprintf(g_lines[found],CW,"%s",nl);
+    else if(g_nlines<MAXL){ snprintf(g_lines[g_nlines],CW,"%s",nl); g_nlines++; }
+    g_mv_ok[slot]=1; if(g_mat_rows[slot]<1) g_mat_rows[slot]=1;
+    do_build();
+}
+static void ent_commit(void)
+{
+    if(g_ent_line<0) return;
+    char nm[32]="",gr[32]=""; int sh=0,x=0,y=0,an=0,pr=0;
+    sscanf(g_lines[g_ent_line],"entity %31s %31s sheet=%d x=%d y=%d anim=%d priority=%d",
+           nm,gr,&sh,&x,&y,&an,&pr);
+    if(!nm[0]) return;
+    snprintf(g_lines[g_ent_line],CW,
+             "entity %s %s sheet=%d x=%d y=%d anim=%d priority=%d affine=%d linetab=%d",
+             nm,gr,sh,x,y,an,pr,g_ent_affine,g_ent_linetab);
+    do_build();
+}
+
 /* ---------- layout helpers for nodes ---------- */
 static int node_h(const char *t){ return (!strcmp(t,"if")||!strcmp(t,"update")||!strcmp(t,"start"))?64:40; }
 static int node_find(int id){ for(int i=0;i<g_nodes_n;i++) if(g_nodes[i].id==id) return i; return -1; }
@@ -177,7 +223,7 @@ static void add_node(const char *type)
 }
 
 /* ---------- drawing ---------- */
-static const char *palette[]={"update","number","held","pressed","if","addx","addy","setx","sety","wait","playsfx","playsong","random","brightness","bgscrollx","spawn","destroy","signal"};
+static const char *palette[]={"update","number","held","pressed","if","addx","addy","setx","sety","wait","playsfx","playsong","random","brightness","bgscrollx","spawn","destroy","signal","setmat","affine","linetab"};
 static void draw_graph(void)
 {
     int ox=232, oy=48, ow=W-232-268, oh=H-48-100;
@@ -217,7 +263,8 @@ static void draw_graph(void)
                 || !strcmp(g_nodes[i].type,"addx")||!strcmp(g_nodes[i].type,"addy")||!strcmp(g_nodes[i].type,"setx")
                 || !strcmp(g_nodes[i].type,"sety")||!strcmp(g_nodes[i].type,"wait")||!strcmp(g_nodes[i].type,"playsfx")
                 || !strcmp(g_nodes[i].type,"playsong")||!strcmp(g_nodes[i].type,"brightness")||!strcmp(g_nodes[i].type,"bgscrollx")
-                || !strcmp(g_nodes[i].type,"spawn")||!strcmp(g_nodes[i].type,"destroy")||!strcmp(g_nodes[i].type,"signal");
+                || !strcmp(g_nodes[i].type,"spawn")||!strcmp(g_nodes[i].type,"destroy")||!strcmp(g_nodes[i].type,"signal")
+                || !strcmp(g_nodes[i].type,"setmat")||!strcmp(g_nodes[i].type,"affine")||!strcmp(g_nodes[i].type,"linetab");
         if(exec){ fill(x-4,y+h-16,8,8,(SDL_Color){230,190,90,255}); text(x+6,y+h-18,"in",1,(SDL_Color){170,175,190,255}); }
         else { fill(x-4,y+16,8,8,(SDL_Color){120,200,255,255}); text(x+6,y+22,"value",1,(SDL_Color){170,175,190,255}); }
         if(!strcmp(g_nodes[i].type,"if")){
@@ -293,7 +340,7 @@ static void draw_ui(void)
     fill(0,40,228,H-140,(SDL_Color){20,23,33,255});
     text(14,54,"NODE PALETTE",1,(SDL_Color){130,140,160,255});
     for(int i=0;i<(int)(sizeof(palette)/sizeof(palette[0]));i++){
-        int x=12+(i%2)*106, y=72+(i/2)*26;
+        int x=12+(i%2)*106, y=68+(i/2)*22;
         btn(x,y,100,22,palette[i],0);
     }
     text(14,340,"PROJECT",1,(SDL_Color){130,140,160,255});
@@ -324,6 +371,39 @@ static void draw_ui(void)
         text(rx+14,y+48,"Del removes node.",1,(SDL_Color){140,150,170,255});
     } else {
         text(rx+14,80,"Select a node",1,(SDL_Color){170,180,200,255});
+    }
+    /* ---- sprite matrix widget ---- */
+    {
+        int my=372;
+        text(rx+14,my,"SPRITE MATRIX",1,(SDL_Color){130,140,160,255});
+        btn(rx+150,my-6,24,18,"<",0); btn(rx+180,my-6,24,18,">",0);
+        char sb[64]; snprintf(sb,sizeof(sb),"slot %d  %d row(s)",g_mat_slot,g_mat_rows[g_mat_slot]);
+        text(rx+14,my+16,sb,1,(SDL_Color){200,205,220,255});
+        static const char *lab[4]={"a","b","c","d"};
+        for(int k=0;k<4;k++){
+            char v[48]; snprintf(v,sizeof(v),"%s=%+.2f",lab[k],g_mv[g_mat_slot][k]);
+            text(rx+14,my+38+k*22,v,1,(SDL_Color){215,220,235,255});
+            btn(rx+150,my+34+k*22,24,18,"-",0); btn(rx+180,my+34+k*22,24,18,"+",0);
+        }
+        int bx=rx+14, by=my+132, bw=52, bh=52;
+        fill(bx,by,bw,bh,(SDL_Color){14,16,24,255}); frame(bx,by,bw,bh,(SDL_Color){70,80,105,255});
+        line(bx+bw/2,by,bx+bw/2,by+bh,(SDL_Color){40,46,62,255});
+        line(bx,by+bh/2,bx+bw,by+bh/2,(SDL_Color){40,46,62,255});
+        int qx[4],qy[4];
+        for(int i=0;i<4;i++){
+            double sx=(i==1||i==2)?1.0:-1.0, sy=(i>=2)?1.0:-1.0;
+            double u=g_mv[g_mat_slot][0]*sx+g_mv[g_mat_slot][1]*sy;
+            double v=g_mv[g_mat_slot][2]*sx+g_mv[g_mat_slot][3]*sy;
+            qx[i]=bx+bw/2+(int)(u*bw*0.32); qy[i]=by+bh/2+(int)(v*bh*0.32);
+        }
+        for(int i=0;i<4;i++) line(qx[i],qy[i],qx[(i+1)&3],qy[(i+1)&3],(SDL_Color){255,200,110,255});
+        char eb[64];
+        snprintf(eb,sizeof(eb),"entity affine=%d",g_ent_affine);
+        text(rx+14,by+bh+10,eb,1,(SDL_Color){200,205,220,255});
+        btn(rx+150,by+bh+6,24,18,"-",0); btn(rx+180,by+bh+6,24,18,"+",0);
+        snprintf(eb,sizeof(eb),"entity linetab=%d",g_ent_linetab);
+        text(rx+14,by+bh+32,eb,1,(SDL_Color){200,205,220,255});
+        btn(rx+150,by+bh+28,24,18,"-",0); btn(rx+180,by+bh+28,24,18,"+",0);
     }
     text(rx+14,H-180,"TIMELINE",1,(SDL_Color){130,140,160,255});
     fill(rx+14,H-156,232,60,(SDL_Color){26,30,42,255});
@@ -423,7 +503,7 @@ int main(int argc, char **argv)
                     if(hit(mx,my,988,8,90,24)){ project_save(); setlog("project saved",1); }
                 } else if(mx<228){
                     for(int i=0;i<(int)(sizeof(palette)/sizeof(palette[0]));i++){
-                        int x=12+(i%2)*106,y=72+(i/2)*26;
+                        int x=12+(i%2)*106,y=68+(i/2)*22;
                         if(hit(mx,my,x,y,100,22)) add_node(palette[i]);
                     }
                 } else if(mx>W-260 && g_sel>=0){
@@ -460,6 +540,40 @@ int main(int argc, char **argv)
                             project_save();
                             setlog("property changed",1);
                         }
+                    }
+                } else if(mx>W-260 && my>=364 && my<398){
+                    if(hit(mx,my,W-260+150,366,24,18)&&g_mat_slot>0) g_mat_slot--;
+                    if(hit(mx,my,W-260+180,366,24,18)&&g_mat_slot<15) g_mat_slot++;
+                    setlog("matrix slot selected",1);
+                } else if(mx>W-260 && my>=400 && my<498){
+                    for(int k=0;k<4;k++){
+                        int y=372+34+k*22;
+                        if(hit(mx,my,W-260+150,y,24,18)||hit(mx,my,W-260+180,y,24,18)){
+                            int d=hit(mx,my,W-260+180,y,24,18)?1:-1;
+                            double v=g_mv[g_mat_slot][k]+d*0.05;
+                            if(v>4.0) v=4.0; if(v<-4.0) v=-4.0;
+                            g_mv[g_mat_slot][k]=v;
+                            mat_commit(g_mat_slot);
+                            char lm[96]; snprintf(lm,sizeof(lm),"slot %d %s -> %+.2f",g_mat_slot,"abcd"+k,0.0);
+                            snprintf(lm,sizeof(lm),"matrix slot %d edited — rebuilt",g_mat_slot);
+                            setlog(lm,1);
+                            break;
+                        }
+                    }
+                } else if(mx>W-260 && my>=570 && my<618){
+                    int y=572;
+                    if(hit(mx,my,W-260+150,y,24,18)||hit(mx,my,W-260+180,y,24,18)){
+                        int d=hit(mx,my,W-260+180,y,24,18)?1:-1;
+                        if(g_ent_affine<0) g_ent_affine=0; else g_ent_affine+=d;
+                        if(g_ent_affine<0) g_ent_affine=-1;
+                        if(g_ent_affine>15) g_ent_affine=15;
+                        ent_commit(); setlog("entity matrix slot changed",1);
+                    } else if(hit(mx,my,W-260+150,y+24,24,18)||hit(mx,my,W-260+180,y+24,24,18)){
+                        int d=hit(mx,my,W-260+180,y+24,24,18)?1:-1;
+                        if(g_ent_linetab<0) g_ent_linetab=0; else g_ent_linetab+=d;
+                        if(g_ent_linetab<0) g_ent_linetab=-1;
+                        if(g_ent_linetab>63) g_ent_linetab=63;
+                        ent_commit(); setlog("entity line table changed",1);
                     }
                 } else if(g_tab==0){
                     for(int i=g_nodes_n-1;i>=0;i--){

@@ -25,12 +25,16 @@ typedef struct {
 } sheetdef_t;
 typedef struct {
     char name[32]; int sheet, x, y, anim, priority; char graph[32];
+    int affine, linetab;      /* -1 = leave the sprite un-warped */
 } entdef_t;
+/* One row of a per-scanline matrix table, from a `mat set=N a=.. b=..` line. */
+typedef struct { int table; int32_t a, b, c, d; } matrow_t;
 typedef struct {
     char title[33], author[33], mode[12], level[192], music[192], project_dir[192];
     int qfa, voices, mv, sv; unsigned backdrop, level_bpp;
     sheetdef_t sheets[8]; int nsheets;
     entdef_t ents[16]; int nents;
+    matrow_t mats[96]; int nmats;
     node_t nodes[160]; int nnodes;
     link_t links[320]; int nlinks;
 } project_t;
@@ -102,7 +106,21 @@ static int parse_project(const char *path, project_t *p)
             char nm[32] = "", gr[32] = ""; int sh = 0;
             if (sscanf(s + 7, "%31s %31s sheet=%d x=%d y=%d anim=%d priority=%d", nm, gr, &sh, &e->x, &e->y, &e->anim, &e->priority) < 2) { fclose(f); return -3; }
             strcpy(e->name, nm); strcpy(e->graph, gr); e->sheet = sh;
+            e->affine = e->linetab = -1;
+            for (const char *k = s; (k = strstr(k, "affine=")) != NULL; k += 7) e->affine = atoi(k + 7);
+            for (const char *k = s; (k = strstr(k, "linetab=")) != NULL; k += 8) e->linetab = atoi(k + 8);
             p->nents++;
+        } else if (!strncmp(s, "mat ", 4)) {
+            /* mat set=N a=<f> b=<f> c=<f> d=<f>  — one row of table N, in order */
+            matrow_t *m;
+            int tb = 0; double a = 1.0, b = 0.0, c = 0.0, d = 1.0;
+            if (p->nmats >= 96) { fclose(f); return -3; }
+            if (sscanf(s + 4, "set=%d a=%lf b=%lf c=%lf d=%lf", &tb, &a, &b, &c, &d) < 1) { fclose(f); return -3; }
+            if (tb < 0 || tb > 63) { fclose(f); return -3; }
+            m = &p->mats[p->nmats++];
+            m->table = tb;
+            m->a = (int32_t)(a * 65536.0); m->b = (int32_t)(b * 65536.0);
+            m->c = (int32_t)(c * 65536.0); m->d = (int32_t)(d * 65536.0);
         } else if (!strncmp(s, "node ", 5)) {
             node_t *n = &p->nodes[p->nnodes];
             if (p->nnodes >= 160) { fclose(f); return -3; }
@@ -229,6 +247,17 @@ static void compile_action(cc_t *c, node_t *n, int *stop)
     else if (!strcmp(t, "addy")) eop(e, MSOP_ADDY, r, 0, 0);
     else if (!strcmp(t, "setvx")) eop(e, MSOP_SETVX, r, 0, 0);
     else if (!strcmp(t, "setvy")) eop(e, MSOP_SETVY, r, 0, 0);
+    else if (!strcmp(t, "setmat")) {
+        /* SETMAT slot, ra, rb, rc, rd — 16.16 rows loaded as immediates */
+        eldi32(e, 11, fix_of(n, "a", 65536));
+        eldi32(e, 12, fix_of(n, "b", 0));
+        eldi32(e, 13, fix_of(n, "c", 0));
+        eldi32(e, 14, fix_of(n, "d", 65536));
+        e8(e, MSOP_SETMAT); e8(e, imm_of(n, "slot", 0) & 15);
+        e8(e, 11); e8(e, 12); e8(e, 13); e8(e, 14);
+    }
+    else if (!strcmp(t, "affine")) { e8(e, MSOP_AFFINE); e8(e, 0); e16(e, imm_of(n, "slot", 0)); }
+    else if (!strcmp(t, "linetab")) { e8(e, MSOP_LINETAB); e8(e, 0); e16(e, imm_of(n, "table", 0)); }
     else if (!strcmp(t, "brightness")) eop(e, MSOP_FX, 0, r, 0);
     else if (!strcmp(t, "bgscrollx")) eop(e, MSOP_BGSCROLL, imm_of(n, "layer", 0), r, 10);
     else if (!strcmp(t, "bgscrolly")) eop(e, MSOP_BGSCROLL, imm_of(n, "layer", 0), 9, r);
@@ -686,6 +715,43 @@ int ms_build_project_opts(const char *path, ms_build_result_t *out, int canonica
         int rc = add_manifest(&cw, &p, has_pal, has_splash);
         if (rc != MS_CART_OK) { snprintf(out->error, sizeof(out->error), "manifest: %s", ms_cart_err_str(rc)); return -6; }
 
+        /* ---- Mosaic extension: per-scanline matrix tables (kind 12) ---- */
+        if (p.nmats) {
+            int tables = 0, rows[64], complete = 1;
+            memset(rows, 0, sizeof rows);
+            for (int i = 0; i < p.nmats; i++) {
+                if (p.mats[i].table + 1 > tables) tables = p.mats[i].table + 1;
+                rows[p.mats[i].table]++;
+            }
+            for (int t = 0; t < tables; t++) if (rows[t] < 1 || rows[t] > 240) complete = 0;
+            if (!complete) {
+                snprintf(out->error, sizeof(out->error),
+                         "matrix tables must be contiguous from 0, 1..240 rows each");
+                return -7;
+            }
+            size_t hdr = 4u + (size_t)tables * 2u;
+            hdr = (hdr + 3u) & ~(size_t)3u;
+            uint8_t *mpx = calloc(1, hdr + (size_t)p.nmats * 16u);
+            if (!mpx) { snprintf(out->error, sizeof(out->error), "out of memory"); return -7; }
+            ms_wr16(mpx, (uint16_t)tables);
+            ms_wr16(mpx + 2, 0);
+            for (int t = 0; t < tables; t++) ms_wr16(mpx + 4 + (size_t)t * 2u, (uint16_t)rows[t]);
+            size_t at = hdr;
+            for (int t = 0; t < tables; t++)
+                for (int i = 0; i < p.nmats; i++) if (p.mats[i].table == t) {
+                    ms_wr32(mpx + at, (uint32_t)p.mats[i].a); at += 4;
+                    ms_wr32(mpx + at, (uint32_t)p.mats[i].b); at += 4;
+                    ms_wr32(mpx + at, (uint32_t)p.mats[i].c); at += 4;
+                    ms_wr32(mpx + at, (uint32_t)p.mats[i].d); at += 4;
+                }
+            int rcm = ms_cart_add(&cw, "matrices", MS_A_MATRICES, mpx, at);
+            free(mpx);
+            if (rcm != MS_CART_OK) {
+                snprintf(out->error, sizeof(out->error), "matrices rejected: %s", ms_cart_err_str(rcm));
+                return -7;
+            }
+        }
+
         static uint8_t code[MS_PROGRAM_MAX];
         emitter_t e = { code, 0, sizeof(code), 0 };
         static ms_entity_def_t defs[16];
@@ -699,9 +765,18 @@ int ms_build_project_opts(const char *path, ms_build_result_t *out, int canonica
             }
             cc_t cc = { &p, &e, 0 };
             size_t sc = 0, uc = 0;
-            if (start_node >= 0) { sc = e.len; compile_chain(&cc, start_node, 0); eop(&e, MSOP_RET, 0, 0, 0); }
+            const int warped = ed->affine >= 0 || ed->linetab >= 0;
+            if (start_node >= 0 || warped) {
+                sc = e.len;
+                /* entity-level defaults: select the object matrix / line table
+                 * once, at spawn, before the cart's own start chain runs. */
+                if (ed->affine >= 0) { e8(&e, MSOP_AFFINE); e8(&e, 0); e16(&e, ed->affine); }
+                if (ed->linetab >= 0) { e8(&e, MSOP_LINETAB); e8(&e, 0); e16(&e, ed->linetab); }
+                if (start_node >= 0) compile_chain(&cc, start_node, 0);
+                eop(&e, MSOP_RET, 0, 0, 0);
+            }
             if (upd_node >= 0) { uc = e.len; compile_chain(&cc, upd_node, 0); eop(&e, MSOP_RET, 0, 0, 0); }
-            defs[i].start_pc = start_node >= 0 ? (uint16_t)sc : 0xFFFFu;
+            defs[i].start_pc = (start_node >= 0 || warped) ? (uint16_t)sc : 0xFFFFu;
             defs[i].update_pc = upd_node >= 0 ? (uint16_t)uc : 0xFFFFu;
             defs[i].sheet = (uint16_t)(ed->sheet >= 0 && ed->sheet < p.nsheets ? ed->sheet : 0);
             defs[i].anim = (uint16_t)ed->anim;

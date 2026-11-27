@@ -60,8 +60,12 @@ That gap is what the compat doc still lists:
       this without C, plus `docs/03-bytecode-isa.md`.
 - [x] Manifest `matrices` block and cart kind 12 (`MS_A_MATRICES`): 16-byte
       records, count-prefixed, validated like every other asset.
-- [ ] Studio inspector: matrix widget (rotate/scale/shear sliders, per-line
-      table editor for the shear/parallax case).
+- [x] Studio inspector: matrix widget — slot picker, `a b c d` with `-`/`+`,
+      a live warp preview, and the selected entity's `affine`/`linetab`
+      selection. Every edit rewrites the `.mpj` line and rebuilds.
+- [x] `.mpj` compiler: `setmat`/`affine`/`linetab` node types and `mat set=N`
+      table rows, so a project reaches the opcodes without hand-assembled
+      bytecode; `examples/warp/` is the end-to-end demo.
 - [ ] Port conformance: ESP32 PPU and the register-delta codec carry the matrix
       table (`REG_DELTA` already carries the per-frame matrices; the per-line
       table needs a new sub-record).
